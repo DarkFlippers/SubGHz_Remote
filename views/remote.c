@@ -132,7 +132,7 @@ void subrem_view_remote_draw(Canvas* canvas, SubRemViewRemoteModel* model) {
         canvas_draw_icon(
             canvas,
             0,
-            1,
+            2,
             (model->is_external) ? &I_External_antenna_20x12 : &I_Internal_antenna_20x12);
         canvas_draw_icon(canvas, 50, 0, &I_Status_cube_14x14);
         if(model->state == SubRemViewRemoteStateSending) {
