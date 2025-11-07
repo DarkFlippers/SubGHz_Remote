@@ -7,7 +7,7 @@ App(
         "gui",
         "dialogs",
     ],
-    stack_size=2 * 1024,
+    stack_size=4 * 1024,
     targets=["f7"],
     fap_icon="icon.png",
     fap_author="@gid9798 and @xMasterX",
@@ -15,6 +15,6 @@ App(
     fap_category="Sub-GHz",
     fap_icon_assets="icons",
     fap_icon_assets_symbol="subghz_remote",
-    fap_version="1.7",
+    fap_version="1.8.9",
     fap_weburl="https://github.com/DarkFlippers/SubGHz_Remote",
 )

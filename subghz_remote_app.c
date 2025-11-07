@@ -4,18 +4,36 @@
 static bool subghz_remote_app_custom_event_callback(void* context, uint32_t event) {
     furi_assert(context);
     SubGhzRemoteApp* app = context;
+
+    // Safety check: don't process events during destruction
+    if(app->is_destroying) {
+        return false;
+    }
+
     return scene_manager_handle_custom_event(app->scene_manager, event);
 }
 
 static bool subghz_remote_app_back_event_callback(void* context) {
     furi_assert(context);
     SubGhzRemoteApp* app = context;
+
+    // Safety check: don't process events during destruction
+    if(app->is_destroying) {
+        return false;
+    }
+
     return scene_manager_handle_back_event(app->scene_manager);
 }
 
 static void subghz_remote_app_tick_event_callback(void* context) {
     furi_assert(context);
     SubGhzRemoteApp* app = context;
+
+    // Safety check: don't process events during destruction
+    if(app->is_destroying) {
+        return;
+    }
+
     scene_manager_handle_tick_event(app->scene_manager);
 }
 
@@ -111,17 +129,26 @@ SubGhzRemoteApp* subghz_remote_app_alloc() {
         app->map_preset->subs_preset[i] = subrem_sub_file_preset_alloc();
     }
 
-    app->txrx = subghz_txrx_alloc();
-
-    subghz_txrx_set_need_save_callback(app->txrx, subrem_save_active_sub, app);
+    // CRITICAL: Initialize TxRx as NULL - lazy initialization on first use
+    // This prevents crashes during app startup when SubGHz devices may not be ready
+    app->txrx = NULL;
 
     app->map_not_saved = false;
+    app->chosen_sub = 0;
+    app->is_destroying = false;
 
     return app;
 }
 
 void subghz_remote_app_free(SubGhzRemoteApp* app) {
     furi_assert(app);
+
+    // Set destruction flag FIRST to prevent any new callbacks
+    app->is_destroying = true;
+
+    // Stop the view dispatcher to prevent any pending events from being processed
+    // This must be done BEFORE we start freeing components
+    view_dispatcher_stop(app->view_dispatcher);
 
     furi_hal_power_suppress_charge_exit();
 
@@ -159,7 +186,10 @@ void subghz_remote_app_free(SubGhzRemoteApp* app) {
     scene_manager_free(app->scene_manager);
     view_dispatcher_free(app->view_dispatcher);
 
-    subghz_txrx_free(app->txrx);
+    // Free TxRx only if it was allocated
+    if(app->txrx) {
+        subghz_txrx_free(app->txrx);
+    }
 
     for(uint8_t i = 0; i < SubRemSubKeyNameMaxCount; i++) {
         subrem_sub_file_preset_free(app->map_preset->subs_preset[i]);
@@ -210,15 +240,13 @@ int32_t subghz_remote_app(void* arg) {
         if(fw_ofw) {
             scene_manager_next_scene(subghz_remote_app->scene_manager, SubRemSceneOpenMapFile);
         }
-    }
-
-    if(!fw_ofw) {
-        scene_manager_next_scene(subghz_remote_app->scene_manager, SubRemSceneFwWarning);
-    }
+        if(!fw_ofw) {
+            scene_manager_next_scene(subghz_remote_app->scene_manager, SubRemSceneFwWarning);
+        }
 #else
         scene_manager_next_scene(subghz_remote_app->scene_manager, SubRemSceneOpenMapFile);
-    }
 #endif
+    }
 
     view_dispatcher_run(subghz_remote_app->view_dispatcher);
 

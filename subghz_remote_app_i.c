@@ -32,7 +32,7 @@ static SubRemLoadMapState subrem_map_preset_check(
     SubGhzTxRx* txrx,
     FlipperFormat* fff_data_file) {
     furi_assert(map_preset);
-    furi_assert(txrx);
+    // TxRx is optional - if NULL, skip protocol validation (lazy loading)
 
     bool all_loaded = true;
     SubRemLoadMapState ret = SubRemLoadMapStateErrorBrokenFile;
@@ -50,7 +50,12 @@ static SubRemLoadMapState subrem_map_preset_check(
         } else if(!flipper_format_file_open_existing(
                       fff_data_file, furi_string_get_cstr(sub_preset->file_path))) {
             sub_preset->load_state = SubRemLoadSubStateErrorNoFile;
-            FURI_LOG_W(TAG, "Error open file %s", furi_string_get_cstr(sub_preset->file_path));
+            FURI_LOG_E(
+                TAG,
+                "Cannot open .sub file: %s\n"
+                "Make sure the file path in your .map file is correct.\n"
+                "The file should exist at the exact path specified.",
+                furi_string_get_cstr(sub_preset->file_path));
         } else {
             sub_loading_state = subrem_sub_preset_load(sub_preset, txrx, fff_data_file);
         }
@@ -157,12 +162,19 @@ SubRemLoadMapState subrem_map_file_load(SubGhzRemoteApp* app, const char* file_p
     } else {
         if(!subrem_map_preset_load(app->map_preset, fff_data_file)) {
             FURI_LOG_E(TAG, "Could no Sub file path in MAP file");
-            // ret = // error for popup
-        } else if(!flipper_format_file_close(fff_data_file)) {
-            ret = SubRemLoadMapStateErrorOpenError;
-        } else {
+            ret = SubRemLoadMapStateErrorBrokenFile;
+        } else if(app->txrx) {
+            // Check presets BEFORE closing the file
+            // Only if TxRx is initialized - otherwise lazy load
             ret = subrem_map_preset_check(app->map_preset, app->txrx, fff_data_file);
+        } else {
+            // Lazy mode: TxRx not initialized yet, just preload file paths
+            // Full validation will happen on first transmission
+            FURI_LOG_I(TAG, "Lazy loading map file (TxRx not initialized yet)");
+            ret = SubRemLoadMapStateOK;
         }
+        // Close file after all operations
+        flipper_format_file_close(fff_data_file);
     }
 
     if(ret == SubRemLoadMapStateOK) {
@@ -222,9 +234,27 @@ void subrem_save_active_sub(void* context) {
     furi_assert(context);
     SubGhzRemoteApp* app = context;
 
+    if(app->chosen_sub >= SubRemSubKeyNameMaxCount) {
+        FURI_LOG_E(TAG, "Invalid chosen_sub index: %d", app->chosen_sub);
+        return;
+    }
+
     SubRemSubFilePreset* sub_preset = app->map_preset->subs_preset[app->chosen_sub];
     subrem_save_protocol_to_file(
         sub_preset->fff_data, furi_string_get_cstr(sub_preset->file_path));
+}
+
+// Lazy initialization of TxRx - only allocate when first needed
+static void subrem_ensure_txrx(SubGhzRemoteApp* app) {
+    if(app->txrx == NULL) {
+        FURI_LOG_I(TAG, "Lazy initializing TxRx subsystem");
+        app->txrx = subghz_txrx_alloc();
+        if(app->txrx) {
+            subghz_txrx_set_need_save_callback(app->txrx, subrem_save_active_sub, app);
+        } else {
+            FURI_LOG_E(TAG, "CRITICAL: Failed to allocate TxRx!");
+        }
+    }
 }
 
 bool subrem_tx_start_sub(SubGhzRemoteApp* app, SubRemSubFilePreset* sub_preset) {
@@ -232,9 +262,17 @@ bool subrem_tx_start_sub(SubGhzRemoteApp* app, SubRemSubFilePreset* sub_preset) 
     furi_assert(sub_preset);
     bool ret = false;
 
+    // Lazy init TxRx on first transmission
+    subrem_ensure_txrx(app);
+    if(!app->txrx) {
+        FURI_LOG_E(TAG, "Cannot start TX: TxRx not available");
+        return false;
+    }
+
     subrem_tx_stop_sub(app, true);
 
-    if(sub_preset->type == SubGhzProtocolTypeUnknown) {
+    if(sub_preset->type == SubGhzProtocolTypeUnknown || sub_preset->fff_data == NULL) {
+        FURI_LOG_E(TAG, "Invalid sub_preset: type=%d, fff_data=%p", sub_preset->type, sub_preset->fff_data);
         ret = false;
     } else {
         FURI_LOG_I(TAG, "Send %s", furi_string_get_cstr(sub_preset->label));
@@ -264,17 +302,26 @@ bool subrem_tx_start_sub(SubGhzRemoteApp* app, SubRemSubFilePreset* sub_preset) 
 
 bool subrem_tx_stop_sub(SubGhzRemoteApp* app, bool forced) {
     furi_assert(app);
+
+    // If TxRx was never initialized, nothing to stop
+    if(!app->txrx) {
+        return true;
+    }
+
+    if(app->chosen_sub >= SubRemSubKeyNameMaxCount) {
+        FURI_LOG_E(TAG, "Invalid chosen_sub index in stop: %d", app->chosen_sub);
+        subghz_txrx_stop(app->txrx);
+        return true;
+    }
+
     SubRemSubFilePreset* sub_preset = app->map_preset->subs_preset[app->chosen_sub];
 
     if(forced || (sub_preset->type != SubGhzProtocolTypeRAW)) {
 #ifndef FW_ORIGIN_Official
+        // Reset custom button before stopping transmission
         if(subghz_custom_btn_get() != SUBGHZ_CUSTOM_BTN_OK) {
             subghz_custom_btn_set(SUBGHZ_CUSTOM_BTN_OK);
             subghz_txrx_custom_button_reset(app->txrx);
-
-            // Call deserialize yet another time to restore the original button if a custom button was used
-            subghz_transmitter_deserialize(app->txrx->transmitter, sub_preset->fff_data);
-
             subghz_custom_btns_reset();
         }
 #endif

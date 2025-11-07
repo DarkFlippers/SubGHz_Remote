@@ -8,12 +8,24 @@
 void subrem_scene_remote_callback(SubRemCustomEvent event, void* context) {
     furi_assert(context);
     SubGhzRemoteApp* app = context;
+
+    // Safety check: don't send events during destruction
+    if(app->is_destroying) {
+        return;
+    }
+
     view_dispatcher_send_custom_event(app->view_dispatcher, event);
 }
 
 void subrem_scene_remote_raw_callback_end_tx(void* context) {
     furi_assert(context);
     SubGhzRemoteApp* app = context;
+
+    // Safety check: don't send events during destruction
+    if(app->is_destroying) {
+        return;
+    }
+
     view_dispatcher_send_custom_event(app->view_dispatcher, SubRemCustomEventViewRemoteForcedStop);
 }
 
@@ -38,18 +50,29 @@ static uint8_t subrem_scene_remote_event_to_index(SubRemCustomEvent event_id) {
 void subrem_scene_remote_on_enter(void* context) {
     SubGhzRemoteApp* app = context;
 
+    FURI_LOG_I(TAG, "Entering remote scene");
+
     subrem_view_remote_update_data_labels(app->subrem_remote_view, app->map_preset->subs_preset);
-    subrem_view_remote_set_radio(
-        app->subrem_remote_view,
-        subghz_txrx_radio_device_get(app->txrx) != SubGhzRadioDeviceTypeInternal);
+
+    // Always show internal radio icon since TxRx is lazy-initialized
+    // Will be updated when transmission starts
+    subrem_view_remote_set_radio(app->subrem_remote_view, false);
 
     subrem_view_remote_set_callback(app->subrem_remote_view, subrem_scene_remote_callback, app);
 
+    FURI_LOG_I(TAG, "Switching to remote view");
     view_dispatcher_switch_to_view(app->view_dispatcher, SubRemViewIDRemote);
+    FURI_LOG_I(TAG, "Remote scene entered successfully");
 }
 
 bool subrem_scene_remote_on_event(void* context, SceneManagerEvent event) {
     SubGhzRemoteApp* app = context;
+
+    // Safety check: don't process events during destruction
+    if(app->is_destroying) {
+        return false;
+    }
+
     if(event.type == SceneManagerEventTypeCustom) {
         if(event.event == SubRemCustomEventViewRemoteBack) {
             if(!scene_manager_previous_scene(app->scene_manager)) {
@@ -69,35 +92,60 @@ bool subrem_scene_remote_on_event(void* context, SceneManagerEvent event) {
             uint8_t chosen_sub = subrem_scene_remote_event_to_index(event.event);
             app->chosen_sub = chosen_sub;
 
+            // Safety check: validate index and preset
+            if(chosen_sub >= SubRemSubKeyNameMaxCount) {
+                FURI_LOG_E(TAG, "Invalid chosen_sub: %d", chosen_sub);
+                return true;
+            }
+
+            SubRemSubFilePreset* sub_preset = app->map_preset->subs_preset[chosen_sub];
+            if(!sub_preset) {
+                FURI_LOG_E(TAG, "NULL preset at index %d", chosen_sub);
+                subrem_view_remote_set_state(
+                    app->subrem_remote_view, SubRemViewRemoteStateIdle, 0);
+                if(app->notifications) {
+                    notification_message(app->notifications, &sequence_blink_red_100);
+                }
+                return true;
+            }
+
             subrem_view_remote_set_state(
                 app->subrem_remote_view, SubRemViewRemoteStateLoading, chosen_sub);
 
-            if(subrem_tx_start_sub(app, app->map_preset->subs_preset[chosen_sub])) {
-                if(app->map_preset->subs_preset[chosen_sub]->type == SubGhzProtocolTypeRAW) {
+            if(subrem_tx_start_sub(app, sub_preset)) {
+                if(sub_preset->type == SubGhzProtocolTypeRAW) {
                     subghz_txrx_set_raw_file_encoder_worker_callback_end(
                         app->txrx, subrem_scene_remote_raw_callback_end_tx, app);
                 }
                 subrem_view_remote_set_state(
                     app->subrem_remote_view, SubRemViewRemoteStateSending, chosen_sub);
-                notification_message(app->notifications, &sequence_blink_start_magenta);
+                if(app->notifications) {
+                    notification_message(app->notifications, &sequence_blink_start_magenta);
+                }
             } else {
                 subrem_view_remote_set_state(
                     app->subrem_remote_view, SubRemViewRemoteStateIdle, 0);
-                notification_message(app->notifications, &sequence_blink_red_100);
+                if(app->notifications) {
+                    notification_message(app->notifications, &sequence_blink_red_100);
+                }
             }
             return true;
         } else if(event.event == SubRemCustomEventViewRemoteForcedStop) {
             subrem_tx_stop_sub(app, true);
             subrem_view_remote_set_state(app->subrem_remote_view, SubRemViewRemoteStateIdle, 0);
 
-            notification_message(app->notifications, &sequence_blink_stop);
+            if(app->notifications) {
+                notification_message(app->notifications, &sequence_blink_stop);
+            }
             return true;
         } else if(event.event == SubRemCustomEventViewRemoteStop) {
             if(subrem_tx_stop_sub(app, false)) {
                 subrem_view_remote_set_state(
                     app->subrem_remote_view, SubRemViewRemoteStateIdle, 0);
 
-                notification_message(app->notifications, &sequence_blink_stop);
+                if(app->notifications) {
+                    notification_message(app->notifications, &sequence_blink_stop);
+                }
             }
             return true;
         }
@@ -110,9 +158,17 @@ bool subrem_scene_remote_on_event(void* context, SceneManagerEvent event) {
 void subrem_scene_remote_on_exit(void* context) {
     SubGhzRemoteApp* app = context;
 
+    // CRITICAL: Remove RAW callback BEFORE stopping transmission to prevent race condition
+    // Only if TxRx was initialized
+    if(app->txrx) {
+        subghz_txrx_set_raw_file_encoder_worker_callback_end(app->txrx, NULL, NULL);
+    }
+
     subrem_tx_stop_sub(app, true);
 
     subrem_view_remote_set_state(app->subrem_remote_view, SubRemViewRemoteStateIdle, 0);
 
-    notification_message(app->notifications, &sequence_blink_stop);
+    if(app->notifications) {
+        notification_message(app->notifications, &sequence_blink_stop);
+    }
 }

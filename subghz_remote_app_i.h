@@ -54,6 +54,7 @@ typedef struct {
     bool map_not_saved;
 
     uint8_t chosen_sub;
+    bool is_destroying;
 } SubGhzRemoteApp;
 
 SubRemLoadMapState subrem_load_from_file(SubGhzRemoteApp* app);

@@ -5,6 +5,8 @@
 #include <input/input.h>
 #include <gui/elements.h>
 
+#define TAG "EditMenuView"
+
 #define subrem_view_edit_menu_MAX_LABEL_LENGTH 12
 
 #define FRAME_HEIGHT 12
@@ -74,10 +76,13 @@ uint8_t subrem_view_edit_menu_get_index(SubRemViewEditMenu* subrem_view_edit_rem
 }
 
 void subrem_view_edit_menu_draw(Canvas* canvas, SubRemViewEditMenuModel* model) {
-    canvas_clear(canvas);
-    canvas_set_color(canvas, ColorBlack);
+    if(!canvas || !model) {
+        FURI_LOG_E(TAG, "Canvas or model is NULL!");
+        return;
+    }
 
     canvas_clear(canvas);
+    canvas_set_color(canvas, ColorBlack);
 
     // Draw bottom btn
     canvas_set_font(canvas, FontSecondary);

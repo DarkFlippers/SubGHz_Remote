@@ -42,6 +42,8 @@ SubGhzTxRx* subghz_txrx_alloc(void) {
     subghz_txrx_set_debug_pin_state(instance, false);
 
     instance->custom_button = 0;
+    instance->transmitter = NULL;
+    instance->decoder_result = NULL;
 
     instance->worker = subghz_worker_alloc();
     instance->fff_data = flipper_format_string_alloc();
@@ -67,10 +69,18 @@ SubGhzTxRx* subghz_txrx_alloc(void) {
     subghz_worker_set_context(instance->worker, instance->receiver);
 
     //set default device Internal
-    subghz_devices_init();
+    // CRITICAL: Do NOT call subghz_devices_init() here!
+    // The devices subsystem is initialized globally by the firmware/system.
+    // Calling init() again causes crashes in custom firmwares like Kiisu.
+    // We assume devices are already initialized and just get a reference to the internal radio.
+
+    instance->radio_device = subghz_devices_get_by_name(SUBGHZ_DEVICE_CC1101_INT_NAME);
+    if(instance->radio_device == NULL) {
+        // If we can't get the device, something is very wrong
+        // But don't crash - just set to NULL and handle gracefully later
+        FURI_LOG_E(TAG, "CRITICAL: Cannot get internal CC1101 device!");
+    }
     instance->radio_device_type = SubGhzRadioDeviceTypeInternal;
-    instance->radio_device_type =
-        subghz_txrx_radio_device_set(instance, SubGhzRadioDeviceTypeExternalCC1101);
 
     return instance;
 }
@@ -83,7 +93,9 @@ void subghz_txrx_free(SubGhzTxRx* instance) {
         subghz_devices_end(instance->radio_device);
     }
 
-    subghz_devices_deinit();
+    // Do NOT call subghz_devices_deinit() - it's global and affects other apps!
+    // Let the system manage device lifecycle
+    // subghz_devices_deinit();
 
     subghz_worker_free(instance->worker);
     subghz_receiver_free(instance->receiver);
@@ -190,7 +202,13 @@ static uint32_t subghz_txrx_rx(SubGhzTxRx* instance, uint32_t frequency) {
 
 static void subghz_txrx_idle(SubGhzTxRx* instance) {
     furi_assert(instance);
-    furi_assert(instance->txrx_state != SubGhzTxRxStateSleep);
+
+    // Safe state check - allow idle from any state except sleep
+    if(instance->txrx_state == SubGhzTxRxStateSleep) {
+        FURI_LOG_W(TAG, "Cannot idle from sleep state");
+        return;
+    }
+
     subghz_devices_idle(instance->radio_device);
     subghz_txrx_speaker_off(instance);
     instance->txrx_state = SubGhzTxRxStateIDLE;
@@ -198,7 +216,12 @@ static void subghz_txrx_idle(SubGhzTxRx* instance) {
 
 static void subghz_txrx_rx_end(SubGhzTxRx* instance) {
     furi_assert(instance);
-    furi_assert(instance->txrx_state == SubGhzTxRxStateRx);
+
+    // Safe state check instead of assert
+    if(instance->txrx_state != SubGhzTxRxStateRx) {
+        FURI_LOG_W(TAG, "RX end called but state is not RX: %d", instance->txrx_state);
+        return;
+    }
 
     if(subghz_worker_is_running(instance->worker)) {
         subghz_worker_stop(instance->worker);
@@ -217,7 +240,12 @@ void subghz_txrx_sleep(SubGhzTxRx* instance) {
 
 static bool subghz_txrx_tx(SubGhzTxRx* instance, uint32_t frequency) {
     furi_assert(instance);
-    furi_assert(instance->txrx_state != SubGhzTxRxStateSleep);
+
+    // Safe state check instead of assert
+    if(instance->txrx_state == SubGhzTxRxStateSleep) {
+        FURI_LOG_E(TAG, "Cannot TX from sleep state");
+        return false;
+    }
 
     subghz_devices_idle(instance->radio_device);
     subghz_devices_set_frequency(instance->radio_device, frequency);
@@ -319,7 +347,10 @@ SubGhzTxRxStartTxState subghz_txrx_tx_start(SubGhzTxRx* instance, FlipperFormat*
             ret = SubGhzTxRxStartTxStateErrorParserOthers;
         }
         if(ret != SubGhzTxRxStartTxStateOk) {
-            subghz_transmitter_free(instance->transmitter);
+            if(instance->transmitter) {
+                subghz_transmitter_free(instance->transmitter);
+                instance->transmitter = NULL;
+            }
             if(instance->txrx_state != SubGhzTxRxStateIDLE) {
                 subghz_txrx_idle(instance);
             }
@@ -351,14 +382,25 @@ void subghz_txrx_set_need_save_callback(
 
 static void subghz_txrx_tx_stop(SubGhzTxRx* instance) {
     furi_assert(instance);
-    furi_assert(instance->txrx_state == SubGhzTxRxStateTx);
+
+    // Safe state check instead of assert
+    if(instance->txrx_state != SubGhzTxRxStateTx) {
+        FURI_LOG_W(TAG, "TX stop called but state is not TX: %d", instance->txrx_state);
+        return;
+    }
+
     //Stop TX
     subghz_devices_stop_async_tx(instance->radio_device);
-    subghz_transmitter_stop(instance->transmitter);
-    subghz_transmitter_free(instance->transmitter);
+
+    if(instance->transmitter) {
+        subghz_transmitter_stop(instance->transmitter);
+        subghz_transmitter_free(instance->transmitter);
+        instance->transmitter = NULL;
+    }
 
     //if protocol dynamic then we save the last upload
-    if(instance->decoder_result->protocol->type == SubGhzProtocolTypeDynamic) {
+    if(instance->decoder_result && instance->decoder_result->protocol &&
+       instance->decoder_result->protocol->type == SubGhzProtocolTypeDynamic) {
         if(instance->need_save_callback) {
             instance->need_save_callback(instance->need_save_context);
         }

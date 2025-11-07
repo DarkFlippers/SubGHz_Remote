@@ -1,5 +1,7 @@
 #include "../subghz_remote_app_i.h"
 
+#define TAG "SubRemSceneEditMenu"
+
 void subrem_scene_edit_menu_callback(SubRemCustomEvent event, void* context) {
     furi_assert(context);
     SubGhzRemoteApp* app = context;
@@ -40,13 +42,25 @@ static void subrem_scene_edit_menu_update_data(SubGhzRemoteApp* app) {
     uint8_t index = subrem_scene_edit_menu_state_to_index(
         scene_manager_get_scene_state(app->scene_manager, SubRemSceneEditMenu));
 
+    // Safety check: validate index and preset
+    if(index >= SubRemSubKeyNameMaxCount) {
+        FURI_LOG_E(TAG, "Invalid index in edit_menu_update_data: %d", index);
+        return;
+    }
+
+    SubRemSubFilePreset* sub_preset = app->map_preset->subs_preset[index];
+    if(!sub_preset) {
+        FURI_LOG_E(TAG, "NULL preset at index %d", index);
+        return;
+    }
+
     subrem_view_edit_menu_add_data_to_show(
         app->subrem_edit_menu,
         index,
-        app->map_preset->subs_preset[index]->label,
-        app->map_preset->subs_preset[index]->file_path,
-        app->map_preset->subs_preset[index]->button,
-        app->map_preset->subs_preset[index]->load_state);
+        sub_preset->label,
+        sub_preset->file_path,
+        sub_preset->button,
+        sub_preset->load_state);
 }
 
 void subrem_scene_edit_menu_on_enter(void* context) {

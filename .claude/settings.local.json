@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip:*)",
+      "Bash(pip3:*)",
+      "Bash(ufbt update:*)",
+      "Bash(ufbt)",
+      "Bash(ufbt cli:*)",
+      "Bash(ufbt --help:*)",
+      "Bash(ufbt launch:*)",
+      "Bash(md5sum:*)",
+      "Bash(where:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

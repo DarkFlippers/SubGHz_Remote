@@ -6,6 +6,8 @@
 
 #include <lib/toolbox/path.h>
 
+#define TAG "RemoteView"
+
 #define SUBREM_VIEW_REMOTE_MAX_LABEL_LENGTH 30
 #define SUBREM_VIEW_REMOTE_LEFT_OFFSET      10
 #define SUBREM_VIEW_REMOTE_RIGHT_OFFSET     0
@@ -46,6 +48,13 @@ void subrem_view_remote_update_data_labels(
 
     for(uint8_t i = 0; i < SubRemSubKeyNameMaxCount; i++) {
         sub_preset = subs_presets[i];
+
+        // Safety check: ensure sub_preset is valid
+        if(!sub_preset) {
+            labels[i] = furi_string_alloc_set("[X] Invalid preset");
+            continue;
+        }
+
         switch(sub_preset->load_state) {
         case SubRemLoadSubStateOK:
             if(!furi_string_empty(sub_preset->label)) {
@@ -117,6 +126,11 @@ void subrem_view_remote_set_radio(SubRemViewRemote* subrem_view_remote, bool ext
 }
 
 void subrem_view_remote_draw(Canvas* canvas, SubRemViewRemoteModel* model) {
+    if(!canvas || !model) {
+        FURI_LOG_E(TAG, "Canvas or model is NULL!");
+        return;
+    }
+
     canvas_clear(canvas);
     canvas_set_color(canvas, ColorBlack);
 
@@ -271,6 +285,7 @@ bool subrem_view_remote_input(InputEvent* event, void* context) {
 
 void subrem_view_remote_enter(void* context) {
     furi_assert(context);
+    FURI_LOG_I(TAG, "Remote view enter callback called");
 }
 
 void subrem_view_remote_exit(void* context) {

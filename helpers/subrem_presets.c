@@ -145,9 +145,16 @@ SubRemLoadSubState subrem_sub_preset_load(
         }
 
         if(subghz_txrx_load_decoder_by_name_protocol(txrx, furi_string_get_cstr(temp_str))) {
+            SubGhzProtocolDecoderBase* decoder = subghz_txrx_get_decoder(txrx);
+            if(!decoder) {
+                FURI_LOG_E(TAG, "Decoder is NULL after loading protocol");
+                break;
+            }
+
             SubGhzProtocolStatus status =
-                subghz_protocol_decoder_base_deserialize(subghz_txrx_get_decoder(txrx), fff_data);
+                subghz_protocol_decoder_base_deserialize(decoder, fff_data);
             if(status != SubGhzProtocolStatusOk) {
+                FURI_LOG_E(TAG, "Failed to deserialize protocol");
                 break;
             }
         } else {
@@ -155,7 +162,13 @@ SubRemLoadSubState subrem_sub_preset_load(
             break;
         }
 
-        const SubGhzProtocol* protocol = subghz_txrx_get_decoder(txrx)->protocol;
+        SubGhzProtocolDecoderBase* decoder = subghz_txrx_get_decoder(txrx);
+        if(!decoder || !decoder->protocol) {
+            FURI_LOG_E(TAG, "Decoder or protocol is NULL");
+            break;
+        }
+
+        const SubGhzProtocol* protocol = decoder->protocol;
 
         if(protocol->flag & SubGhzProtocolFlag_Send) {
             if((protocol->type == SubGhzProtocolTypeStatic) ||

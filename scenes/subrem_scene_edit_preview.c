@@ -5,6 +5,12 @@
 
 void subghz_scene_edit_preview_save_popup_callback(void* context) {
     SubGhzRemoteApp* app = context;
+
+    // Safety check: don't send events during destruction
+    if(app->is_destroying) {
+        return;
+    }
+
     view_dispatcher_send_custom_event(
         app->view_dispatcher, SubRemCustomEventSceneEditPreviewSaved);
 }
@@ -12,6 +18,12 @@ void subghz_scene_edit_preview_save_popup_callback(void* context) {
 void subrem_scene_edit_preview_callback(SubRemCustomEvent event, void* context) {
     furi_assert(context);
     SubGhzRemoteApp* app = context;
+
+    // Safety check: don't send events during destruction
+    if(app->is_destroying) {
+        return;
+    }
+
     view_dispatcher_send_custom_event(app->view_dispatcher, event);
 }
 

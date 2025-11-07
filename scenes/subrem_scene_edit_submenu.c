@@ -28,7 +28,17 @@ void subrem_scene_edit_submenu_var_list_change_callback(VariableItem* item) {
     uint8_t index = variable_item_get_current_value_index(item);
 
     variable_item_set_current_value_text(item, custom_button_text[index]);
+
+    // Safety check: validate chosen_sub index
+    if(app->chosen_sub >= SubRemSubKeyNameMaxCount) {
+        return;
+    }
+
     SubRemSubFilePreset* sub_preset = app->map_preset->subs_preset[app->chosen_sub];
+    if(!sub_preset) {
+        return;
+    }
+
     sub_preset->button = index;
 }
 
@@ -39,7 +49,16 @@ void subrem_scene_edit_submenu_on_enter(void* context) {
     VariableItemList* var_item_list = app->var_item_list;
     VariableItem* item;
 
+    // Safety check: validate chosen_sub index
+    if(app->chosen_sub >= SubRemSubKeyNameMaxCount) {
+        return;
+    }
+
     SubRemSubFilePreset* sub_preset = app->map_preset->subs_preset[app->chosen_sub];
+    if(!sub_preset) {
+        return;
+    }
+
     variable_item_list_set_enter_callback(var_item_list, subrem_scene_edit_submenu_callback, app);
 
     variable_item_list_add(var_item_list, "Edit Label", 0, NULL, NULL);

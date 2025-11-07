@@ -5,6 +5,11 @@ void subrem_scene_start_submenu_callback(void* context, uint32_t index) {
     furi_assert(context);
     SubGhzRemoteApp* app = context;
 
+    // Safety check: don't send events during destruction
+    if(app->is_destroying) {
+        return;
+    }
+
     view_dispatcher_send_custom_event(app->view_dispatcher, index);
 }
 
