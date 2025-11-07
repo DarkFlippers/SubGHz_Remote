@@ -10,7 +10,9 @@
       "Bash(ufbt launch:*)",
       "Bash(md5sum:*)",
       "Bash(where:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(gh repo fork:*)"
     ],
     "deny": [],
     "ask": []
