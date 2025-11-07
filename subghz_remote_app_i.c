@@ -23,7 +23,12 @@ void subrem_map_preset_reset(SubRemMapPreset* map_preset) {
     furi_assert(map_preset);
 
     for(uint8_t i = 0; i < SubRemSubKeyNameMaxCount; i++) {
-        subrem_sub_file_preset_reset(map_preset->subs_preset[i]);
+        // CRITICAL: Check if preset is valid before resetting
+        if(map_preset->subs_preset[i]) {
+            subrem_sub_file_preset_reset(map_preset->subs_preset[i]);
+        } else {
+            FURI_LOG_E(TAG, "NULL preset at index %d during reset", i);
+        }
     }
 }
 
@@ -42,6 +47,13 @@ static SubRemLoadMapState subrem_map_preset_check(
 
     for(uint8_t i = 0; i < SubRemSubKeyNameMaxCount; i++) {
         sub_preset = map_preset->subs_preset[i];
+
+        // CRITICAL: Check if preset is valid before accessing
+        if(!sub_preset) {
+            FURI_LOG_E(TAG, "NULL preset at index %d during map check", i);
+            all_loaded = false;
+            continue;
+        }
 
         sub_loading_state = SubRemLoadSubStateErrorNoFile;
 
@@ -82,6 +94,13 @@ static bool subrem_map_preset_load(SubRemMapPreset* map_preset, FlipperFormat* f
     SubRemSubFilePreset* sub_preset;
     for(uint8_t i = 0; i < SubRemSubKeyNameMaxCount; i++) {
         sub_preset = map_preset->subs_preset[i];
+
+        // CRITICAL: Check if preset is valid before accessing
+        if(!sub_preset) {
+            FURI_LOG_E(TAG, "NULL preset at index %d during map load", i);
+            continue;
+        }
+
         if(!flipper_format_read_string(
                fff_data_file, map_file_labels[i][0], sub_preset->file_path)) {
 #ifdef FURI_DEBUG
@@ -240,6 +259,18 @@ void subrem_save_active_sub(void* context) {
     }
 
     SubRemSubFilePreset* sub_preset = app->map_preset->subs_preset[app->chosen_sub];
+
+    // CRITICAL: Check if preset is valid before accessing
+    if(!sub_preset) {
+        FURI_LOG_E(TAG, "NULL preset at chosen_sub %d in save", app->chosen_sub);
+        return;
+    }
+
+    if(!sub_preset->fff_data || furi_string_empty(sub_preset->file_path)) {
+        FURI_LOG_E(TAG, "Invalid preset data at chosen_sub %d", app->chosen_sub);
+        return;
+    }
+
     subrem_save_protocol_to_file(
         sub_preset->fff_data, furi_string_get_cstr(sub_preset->file_path));
 }
@@ -316,6 +347,13 @@ bool subrem_tx_stop_sub(SubGhzRemoteApp* app, bool forced) {
 
     SubRemSubFilePreset* sub_preset = app->map_preset->subs_preset[app->chosen_sub];
 
+    // CRITICAL: Check if preset is valid before accessing
+    if(!sub_preset) {
+        FURI_LOG_E(TAG, "NULL preset at chosen_sub %d in stop", app->chosen_sub);
+        subghz_txrx_stop(app->txrx);
+        return true;
+    }
+
     if(forced || (sub_preset->type != SubGhzProtocolTypeRAW)) {
 #ifndef FW_ORIGIN_Official
         // Reset custom button before stopping transmission
@@ -372,12 +410,22 @@ bool subrem_save_map_to_file(SubGhzRemoteApp* app) {
         fff_data, SUBREM_APP_APP_FILE_TYPE, SUBREM_APP_APP_FILE_VERSION);
     for(uint8_t i = 0; i < SubRemSubKeyNameMaxCount; i++) {
         sub_preset = app->map_preset->subs_preset[i];
+        // CRITICAL: Check if preset is valid before accessing
+        if(!sub_preset) {
+            FURI_LOG_E(TAG, "NULL preset at index %d during save (file_path)", i);
+            continue;
+        }
         if(!furi_string_empty(sub_preset->file_path)) {
             flipper_format_write_string(fff_data, map_file_labels[i][0], sub_preset->file_path);
         }
     }
     for(uint8_t i = 0; i < SubRemSubKeyNameMaxCount; i++) {
         sub_preset = app->map_preset->subs_preset[i];
+        // CRITICAL: Check if preset is valid before accessing
+        if(!sub_preset) {
+            FURI_LOG_E(TAG, "NULL preset at index %d during save (label)", i);
+            continue;
+        }
         if(!furi_string_empty(sub_preset->label)) {
             flipper_format_write_string(fff_data, map_file_labels[i][1], sub_preset->label);
         }
@@ -385,6 +433,11 @@ bool subrem_save_map_to_file(SubGhzRemoteApp* app) {
 
     for(uint8_t i = 0; i < SubRemSubKeyNameMaxCount; i++) {
         sub_preset = app->map_preset->subs_preset[i];
+        // CRITICAL: Check if preset is valid before accessing
+        if(!sub_preset) {
+            FURI_LOG_E(TAG, "NULL preset at index %d during save (button)", i);
+            continue;
+        }
         if(sub_preset->button != 0) {
             flipper_format_write_hex(fff_data, map_file_labels[i][2], &sub_preset->button, 1);
         }

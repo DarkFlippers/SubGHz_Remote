@@ -1,5 +1,7 @@
 #include "../subghz_remote_app_i.h"
 
+#define TAG "SubRemSceneOpenSubFile"
+
 void subrem_scene_open_sub_file_error_popup_callback(void* context) {
     SubGhzRemoteApp* app = context;
     view_dispatcher_send_custom_event(
@@ -9,7 +11,19 @@ void subrem_scene_open_sub_file_error_popup_callback(void* context) {
 SubRemLoadSubState subrem_scene_open_sub_file_dialog(SubGhzRemoteApp* app) {
     furi_assert(app);
 
+    // Safety check: validate chosen_sub index
+    if(app->chosen_sub >= SubRemSubKeyNameMaxCount) {
+        FURI_LOG_E(TAG, "Invalid chosen_sub in open_sub_file: %d", app->chosen_sub);
+        return SubRemLoadSubStateError;
+    }
+
     SubRemSubFilePreset* sub = app->map_preset->subs_preset[app->chosen_sub];
+
+    // CRITICAL: Check if preset is valid
+    if(!sub) {
+        FURI_LOG_E(TAG, "NULL preset at chosen_sub %d in open_sub_file", app->chosen_sub);
+        return SubRemLoadSubStateError;
+    }
 
     FuriString* temp_file_path = furi_string_alloc();
 
@@ -48,7 +62,10 @@ SubRemLoadSubState subrem_scene_open_sub_file_dialog(SubGhzRemoteApp* app) {
         furi_record_close(RECORD_STORAGE);
 
         if(ret == SubRemLoadSubStateOK) {
-            subrem_sub_file_preset_free(app->map_preset->subs_preset[app->chosen_sub]);
+            // CRITICAL: Free old preset only if it exists
+            if(app->map_preset->subs_preset[app->chosen_sub]) {
+                subrem_sub_file_preset_free(app->map_preset->subs_preset[app->chosen_sub]);
+            }
             app->map_preset->subs_preset[app->chosen_sub] = sub_candidate;
             app->map_not_saved = true;
         } else {

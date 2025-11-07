@@ -2,6 +2,8 @@
 
 #include <lib/toolbox/path.h>
 
+#define TAG "SubRemSceneEditLabel"
+
 typedef enum {
     SubRemSceneEditLabelStateTextInput,
     SubRemSceneEditLabelStateWidget,
@@ -29,7 +31,19 @@ void subrem_scene_edit_label_widget_callback(GuiButtonType result, InputType typ
 void subrem_scene_edit_label_on_enter(void* context) {
     SubGhzRemoteApp* app = context;
 
+    // Safety check: validate chosen_sub index
+    if(app->chosen_sub >= SubRemSubKeyNameMaxCount) {
+        FURI_LOG_E(TAG, "Invalid chosen_sub in edit_label: %d", app->chosen_sub);
+        return;
+    }
+
     SubRemSubFilePreset* sub_preset = app->map_preset->subs_preset[app->chosen_sub];
+
+    // CRITICAL: Check if preset is valid
+    if(!sub_preset) {
+        FURI_LOG_E(TAG, "NULL preset at chosen_sub %d in edit_label", app->chosen_sub);
+        return;
+    }
 
     FuriString* temp_str = furi_string_alloc();
 
@@ -76,7 +90,20 @@ void subrem_scene_edit_label_on_enter(void* context) {
 bool subrem_scene_edit_label_on_event(void* context, SceneManagerEvent event) {
     SubGhzRemoteApp* app = context;
 
-    FuriString* label = app->map_preset->subs_preset[app->chosen_sub]->label;
+    // Safety check: validate chosen_sub index
+    if(app->chosen_sub >= SubRemSubKeyNameMaxCount) {
+        FURI_LOG_E(TAG, "Invalid chosen_sub in edit_label event: %d", app->chosen_sub);
+        return false;
+    }
+
+    // CRITICAL: Check if preset is valid
+    SubRemSubFilePreset* sub_preset = app->map_preset->subs_preset[app->chosen_sub];
+    if(!sub_preset) {
+        FURI_LOG_E(TAG, "NULL preset at chosen_sub %d in edit_label event", app->chosen_sub);
+        return false;
+    }
+
+    FuriString* label = sub_preset->label;
 
     if(event.type == SceneManagerEventTypeBack) {
         if(scene_manager_get_scene_state(app->scene_manager, SubRemSceneEditLabel) ==

@@ -184,7 +184,7 @@ The `application.fam` file defines the app metadata, dependencies, and build con
 - Official firmware may have incompatible .sub file formats (warning shown)
 - Button press on remote screen: short press back stops transmission or exits
 
-### Fixed Issues (v1.8.6 - FINAL STABLE)
+### Fixed Issues (v1.8.11 - CURRENT STABLE)
 
 **Critical Bug #1 - Freeze on Transmission (FIXED)**:
 - **Symptom**: App would freeze/hang when pressing a button to transmit, requiring hard reboot
@@ -228,7 +228,30 @@ The `application.fam` file defines the app metadata, dependencies, and build con
   - This violates scene manager lifecycle and causes internal state corruption
   - Scene manager cannot handle nested transitions - causes crash in GUI service
 
-**All Fixes Applied (v1.8.6)**:
+**Critical Bug #11 - View Dispatcher Crash on App Exit (FIXED v1.8.10)**:
+- **Symptom**: App crashes in `applications/services/gui/view_dispatcher.c` when exiting
+- **Root Cause**: Improper shutdown order in `subghz_remote_app_free()` at line 186-187
+  - Scene manager was freed AFTER views were removed and freed
+  - When `scene_manager_free()` called active scenes' `on_exit` handlers, views were already freed
+  - Scene `on_exit` handlers tried to access freed views (e.g., `subrem_view_remote_set_state()`)
+  - This caused use-after-free, crashing the view_dispatcher system
+
+**Critical Bug #12 - NULL Pointer Dereference When Opening Map Files (FIXED v1.8.11)**:
+- **Symptom**: App crashes in `applications/services/gui/view_dispatcher.c` when exiting
+- **Root Cause**: Improper shutdown order in `subghz_remote_app_free()` at line 186-187
+  - Scene manager was freed AFTER views were removed and freed
+  - When `scene_manager_free()` called active scenes' `on_exit` handlers, views were already freed
+  - Scene `on_exit` handlers tried to access freed views (e.g., `subrem_view_remote_set_state()`)
+  - This caused use-after-free, crashing the view_dispatcher system
+
+- **Symptom**: App crashes with NULL pointer dereference when loading or accessing map files
+- **Root Cause**: Missing NULL checks throughout preset access code
+  - Multiple functions accessed `map_preset->subs_preset[i]` without verifying pointer validity
+  - Preset allocation could fail silently, leaving NULL pointers in the array
+  - Functions like `subrem_map_preset_check()`, `subrem_map_preset_load()`, and scene handlers crashed when accessing NULL presets
+  - No validation before freeing presets, causing double-free or NULL-free attempts
+
+**All Fixes Applied (v1.8.11)**:
 1. **NULL checks for decoder_result** (`helpers/txrx/subghz_txrx.c:365-366`)
 2. **Stack size increased** from 2KB to 4KB (`application.fam:10`)
 3. **Preset validation** in `subrem_tx_start_sub()` (`subghz_remote_app_i.c:237-238`)
@@ -244,13 +267,36 @@ The `application.fam` file defines the app metadata, dependencies, and build con
 13. **Removed global device deinit** to allow coexistence with other SubGHz apps (`subghz_txrx.c:88-90`)
 14. **Fixed scene transitions** - moved from on_enter to on_event using custom events (`subrem_scene_open_map_file.c:8-52`)
 
+15. **Corrected shutdown order** - Scene manager freed BEFORE views are removed (`subghz_remote_app.c:155-191`)
+16. **Scene on_exit safety checks** - Added is_destroying checks to prevent access to freed components:
+    - `scenes/subrem_scene_remote.c:161-165, 178-180`
+    - `scenes/subrem_scene_edit_menu.c:138-141`
+    - `scenes/subrem_scene_start.c:105-108`
+17. **NULL preset checks in map operations** - Added comprehensive NULL validation:
+    - `subghz_remote_app_i.c:26-31` - Reset function
+    - `subghz_remote_app_i.c:46-51` - Check function
+    - `subghz_remote_app_i.c:93-97` - Load function
+    - `subghz_remote_app_i.c:258-267` - Save active sub
+    - `subghz_remote_app_i.c:345-350` - Stop transmission
+    - `subghz_remote_app_i.c:408-438` - Save map file (3 loops)
+18. **Allocation verification** - Check preset allocation success (`subghz_remote_app.c:131-134`)
+19. **Free NULL checks** - Only free presets if allocated (`subghz_remote_app.c:204-208`)
+20. **Scene preset validation** - NULL checks in scene handlers:
+    - `scenes/subrem_scene_open_sub_file.c:12-24, 63-66`
+    - `scenes/subrem_scene_edit_label.c:32-44, 91-102`
+
 **Files Modified**:
 - `helpers/txrx/subghz_txrx.c` - Multiple safety improvements, removed global deinit
-- `application.fam` - Increased stack size from 2KB to 4KB
-- `subghz_remote_app_i.c` - Fixed use-after-free, bounds checks, file-after-close
-- `subghz_remote_app.c` - Added initialization and destruction flag
-- `scenes/subrem_scene_remote.c` - Added notification checks and destruction handling
+- `application.fam` - Increased stack size from 2KB to 4KB, version bumped to 1.8.11
+- `subghz_remote_app_i.c` - Fixed use-after-free, bounds checks, file-after-close, NULL preset checks
+- `subghz_remote_app.c` - Added initialization and destruction flag, corrected shutdown order, allocation verification
+- `scenes/subrem_scene_remote.c` - Added notification checks, destruction handling, and on_exit safety
+- `scenes/subrem_scene_edit_menu.c` - Added on_exit safety checks
+- `scenes/subrem_scene_start.c` - Added on_exit safety checks
 - `scenes/subrem_scene_open_map_file.c` - Fixed scene transition lifecycle bug
+- `scenes/subrem_scene_open_sub_file.c` - Added NULL preset validation
+- `scenes/subrem_scene_edit_label.c` - Added NULL preset validation
+- `catalog/docs/Changelog.md` - Updated with v1.8.11 changes
 
 ## Related Documentation
 

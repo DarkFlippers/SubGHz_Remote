@@ -12,7 +12,8 @@
       "Bash(where:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(gh repo fork:*)"
+      "Bash(gh repo fork:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

@@ -1,3 +1,27 @@
+## v1.8.11
+- **CRITICAL FIX: Fixed NULL pointer dereference when opening map files (Bug #12)**
+  - Added comprehensive NULL safety checks throughout map loading and preset access code
+  - Fixed crashes in: `subrem_map_preset_check()`, `subrem_map_preset_load()`, `subrem_save_active_sub()`
+  - Fixed crashes in: `subrem_tx_stop_sub()`, `subrem_save_map_to_file()`, `subrem_map_preset_reset()`
+  - Scene fixes: `edit_label`, `open_sub_file` now validate presets before access
+  - Added allocation verification for preset objects
+  - Added proper NULL checks before freeing presets
+
+## v1.8.10
+- **CRITICAL FIX: Fixed view_dispatcher crash on app exit (Bug #11)**
+  - Fixed improper shutdown order that caused crashes in `applications/services/gui/view_dispatcher.c`
+  - Scene manager is now freed BEFORE views are removed, preventing use-after-free
+  - Added safety checks to scene on_exit handlers to prevent access to freed components
+  - Fixed: Remote scene, Edit Menu scene, and Start scene on_exit handlers now check `is_destroying` flag
+
+## v1.8.9
+- Fixed critical stability issues (Bugs #7-#10)
+  - NULL pointer dereferences in transmission code
+  - Use-after-free in custom button handling
+  - Uninitialized variables causing crashes
+  - Scene transition lifecycle bugs
+  - Stack size increased to 4KB
+
 ## v1.7
 - Fixes for RAW files sending by WillyJL
 
