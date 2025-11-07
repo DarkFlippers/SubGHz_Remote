@@ -134,5 +134,9 @@ bool subrem_scene_edit_menu_on_event(void* context, SceneManagerEvent event) {
 
 void subrem_scene_edit_menu_on_exit(void* context) {
     SubGhzRemoteApp* app = context;
-    widget_reset(app->widget);
+
+    // Safety check during destruction
+    if(app && app->widget && !app->is_destroying) {
+        widget_reset(app->widget);
+    }
 }

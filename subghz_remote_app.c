@@ -1,6 +1,8 @@
 #include "subghz_remote_app_i.h"
 #include <lib/toolbox/version.h>
 
+#define TAG "SubGhzRemoteApp"
+
 static bool subghz_remote_app_custom_event_callback(void* context, uint32_t event) {
     furi_assert(context);
     SubGhzRemoteApp* app = context;
@@ -127,6 +129,11 @@ SubGhzRemoteApp* subghz_remote_app_alloc() {
     app->map_preset = malloc(sizeof(SubRemMapPreset));
     for(uint8_t i = 0; i < SubRemSubKeyNameMaxCount; i++) {
         app->map_preset->subs_preset[i] = subrem_sub_file_preset_alloc();
+        // CRITICAL: Verify allocation succeeded
+        if(!app->map_preset->subs_preset[i]) {
+            FURI_LOG_E(TAG, "CRITICAL: Failed to allocate preset %d!", i);
+            // Allocation failure is critical - log and continue, app will handle NULL checks
+        }
     }
 
     // CRITICAL: Initialize TxRx as NULL - lazy initialization on first use
@@ -152,6 +159,11 @@ void subghz_remote_app_free(SubGhzRemoteApp* app) {
 
     furi_hal_power_suppress_charge_exit();
 
+    // CRITICAL FIX: Free scene manager BEFORE removing views
+    // Scene on_exit handlers need to access views, so they must still be valid
+    scene_manager_free(app->scene_manager);
+
+    // Now it's safe to remove and free all views
     // Submenu
     view_dispatcher_remove_view(app->view_dispatcher, SubRemViewIDSubmenu);
     submenu_free(app->submenu);
@@ -183,7 +195,6 @@ void subghz_remote_app_free(SubGhzRemoteApp* app) {
     view_dispatcher_remove_view(app->view_dispatcher, SubRemViewIDEditMenu);
     subrem_view_edit_menu_free(app->subrem_edit_menu);
 
-    scene_manager_free(app->scene_manager);
     view_dispatcher_free(app->view_dispatcher);
 
     // Free TxRx only if it was allocated
@@ -192,7 +203,10 @@ void subghz_remote_app_free(SubGhzRemoteApp* app) {
     }
 
     for(uint8_t i = 0; i < SubRemSubKeyNameMaxCount; i++) {
-        subrem_sub_file_preset_free(app->map_preset->subs_preset[i]);
+        // CRITICAL: Only free if preset was allocated
+        if(app->map_preset->subs_preset[i]) {
+            subrem_sub_file_preset_free(app->map_preset->subs_preset[i]);
+        }
     }
     free(app->map_preset);
 

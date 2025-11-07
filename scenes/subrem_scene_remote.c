@@ -158,6 +158,14 @@ bool subrem_scene_remote_on_event(void* context, SceneManagerEvent event) {
 void subrem_scene_remote_on_exit(void* context) {
     SubGhzRemoteApp* app = context;
 
+    // Safety check: prevent operations if app components are being destroyed
+    if(!app || app->is_destroying) {
+        FURI_LOG_D(TAG, "Skipping on_exit during destruction");
+        return;
+    }
+
+    FURI_LOG_D(TAG, "Remote scene on_exit");
+
     // CRITICAL: Remove RAW callback BEFORE stopping transmission to prevent race condition
     // Only if TxRx was initialized
     if(app->txrx) {
@@ -166,7 +174,10 @@ void subrem_scene_remote_on_exit(void* context) {
 
     subrem_tx_stop_sub(app, true);
 
-    subrem_view_remote_set_state(app->subrem_remote_view, SubRemViewRemoteStateIdle, 0);
+    // Safety: Only update view if it still exists
+    if(app->subrem_remote_view) {
+        subrem_view_remote_set_state(app->subrem_remote_view, SubRemViewRemoteStateIdle, 0);
+    }
 
     if(app->notifications) {
         notification_message(app->notifications, &sequence_blink_stop);

@@ -101,5 +101,9 @@ void subrem_scene_start_on_exit(void* context) {
     furi_assert(context);
 
     SubGhzRemoteApp* app = context;
-    submenu_reset(app->submenu);
+
+    // Safety check during destruction
+    if(app->submenu && !app->is_destroying) {
+        submenu_reset(app->submenu);
+    }
 }
