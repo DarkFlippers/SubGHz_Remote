@@ -88,9 +88,13 @@ SubGhzTxRx* subghz_txrx_alloc(void) {
 void subghz_txrx_free(SubGhzTxRx* instance) {
     furi_assert(instance);
 
+    // CRITICAL: Check radio_device before calling device functions
     if(instance->radio_device_type != SubGhzRadioDeviceTypeInternal) {
         subghz_txrx_radio_device_power_off(instance);
-        subghz_devices_end(instance->radio_device);
+        // Only call subghz_devices_end if radio_device was successfully initialized
+        if(instance->radio_device != NULL) {
+            subghz_devices_end(instance->radio_device);
+        }
     }
 
     // Do NOT call subghz_devices_deinit() - it's global and affects other apps!
@@ -703,6 +707,13 @@ SubGhzProtocolDecoderBase* subghz_txrx_get_decoder(SubGhzTxRx* instance) {
 
 bool subghz_txrx_protocol_is_serializable(SubGhzTxRx* instance) {
     furi_assert(instance);
+
+    // CRITICAL: Check decoder_result and protocol before accessing
+    if(!instance->decoder_result || !instance->decoder_result->protocol) {
+        FURI_LOG_W(TAG, "decoder_result or protocol is NULL in subghz_txrx_protocol_is_serializable");
+        return false;
+    }
+
     return (
         (instance->decoder_result->protocol->flag & SubGhzProtocolFlag_Save) ==
         SubGhzProtocolFlag_Save);
@@ -710,6 +721,13 @@ bool subghz_txrx_protocol_is_serializable(SubGhzTxRx* instance) {
 
 bool subghz_txrx_protocol_is_transmittable(SubGhzTxRx* instance, bool check_type) {
     furi_assert(instance);
+
+    // CRITICAL: Check decoder_result and protocol before accessing
+    if(!instance->decoder_result || !instance->decoder_result->protocol) {
+        FURI_LOG_W(TAG, "decoder_result or protocol is NULL in subghz_txrx_protocol_is_transmittable");
+        return false;
+    }
+
     const SubGhzProtocol* protocol = instance->decoder_result->protocol;
     if(check_type) {
         return (
