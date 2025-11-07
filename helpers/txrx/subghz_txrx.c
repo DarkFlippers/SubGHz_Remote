@@ -176,6 +176,13 @@ void subghz_txrx_get_frequency_and_modulation(
 
 static void subghz_txrx_begin(SubGhzTxRx* instance, uint8_t* preset_data) {
     furi_assert(instance);
+
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_E(TAG, "CRITICAL: radio_device is NULL in subghz_txrx_begin");
+        return;
+    }
+
     subghz_devices_reset(instance->radio_device);
     subghz_devices_idle(instance->radio_device);
     subghz_devices_load_preset(instance->radio_device, FuriHalSubGhzPresetCustom, preset_data);
@@ -186,6 +193,12 @@ static uint32_t subghz_txrx_rx(SubGhzTxRx* instance, uint32_t frequency) {
     furi_assert(instance);
     furi_assert(
         instance->txrx_state != SubGhzTxRxStateRx && instance->txrx_state != SubGhzTxRxStateSleep);
+
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_E(TAG, "CRITICAL: radio_device is NULL in subghz_txrx_rx");
+        return 0;
+    }
 
     subghz_devices_idle(instance->radio_device);
 
@@ -209,6 +222,12 @@ static void subghz_txrx_idle(SubGhzTxRx* instance) {
         return;
     }
 
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_E(TAG, "CRITICAL: radio_device is NULL in subghz_txrx_idle");
+        return;
+    }
+
     subghz_devices_idle(instance->radio_device);
     subghz_txrx_speaker_off(instance);
     instance->txrx_state = SubGhzTxRxStateIDLE;
@@ -223,6 +242,12 @@ static void subghz_txrx_rx_end(SubGhzTxRx* instance) {
         return;
     }
 
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_E(TAG, "CRITICAL: radio_device is NULL in subghz_txrx_rx_end");
+        return;
+    }
+
     if(subghz_worker_is_running(instance->worker)) {
         subghz_worker_stop(instance->worker);
         subghz_devices_stop_async_rx(instance->radio_device);
@@ -234,6 +259,13 @@ static void subghz_txrx_rx_end(SubGhzTxRx* instance) {
 
 void subghz_txrx_sleep(SubGhzTxRx* instance) {
     furi_assert(instance);
+
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_E(TAG, "CRITICAL: radio_device is NULL in subghz_txrx_sleep");
+        return;
+    }
+
     subghz_devices_sleep(instance->radio_device);
     instance->txrx_state = SubGhzTxRxStateSleep;
 }
@@ -244,6 +276,12 @@ static bool subghz_txrx_tx(SubGhzTxRx* instance, uint32_t frequency) {
     // Safe state check instead of assert
     if(instance->txrx_state == SubGhzTxRxStateSleep) {
         FURI_LOG_E(TAG, "Cannot TX from sleep state");
+        return false;
+    }
+
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_E(TAG, "CRITICAL: radio_device is NULL in subghz_txrx_tx");
         return false;
     }
 
@@ -389,6 +427,12 @@ static void subghz_txrx_tx_stop(SubGhzTxRx* instance) {
         return;
     }
 
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_E(TAG, "CRITICAL: radio_device is NULL in subghz_txrx_tx_stop");
+        return;
+    }
+
     //Stop TX
     subghz_devices_stop_async_tx(instance->radio_device);
 
@@ -440,6 +484,12 @@ void subghz_txrx_stop(SubGhzTxRx* instance) {
 
 void subghz_txrx_hopper_update(SubGhzTxRx* instance) {
     furi_assert(instance);
+
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_W(TAG, "radio_device is NULL in subghz_txrx_hopper_update");
+        return;
+    }
 
     switch(instance->hopper_state) {
     case SubGhzHopperStateOFF:
@@ -528,6 +578,13 @@ void subghz_txrx_custom_button_reset(SubGhzTxRx* instance) {
 
 void subghz_txrx_speaker_on(SubGhzTxRx* instance) {
     furi_assert(instance);
+
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_W(TAG, "radio_device is NULL in subghz_txrx_speaker_on");
+        return;
+    }
+
     if(instance->debug_pin_state) {
         subghz_devices_set_async_mirror_pin(instance->radio_device, &gpio_ibutton);
     }
@@ -545,6 +602,21 @@ void subghz_txrx_speaker_on(SubGhzTxRx* instance) {
 
 void subghz_txrx_speaker_off(SubGhzTxRx* instance) {
     furi_assert(instance);
+
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_W(TAG, "radio_device is NULL in subghz_txrx_speaker_off");
+        // Still release speaker if we acquired it
+        if(instance->speaker_state != SubGhzSpeakerStateDisable) {
+            if(furi_hal_speaker_is_mine()) {
+                furi_hal_speaker_release();
+                if(instance->speaker_state == SubGhzSpeakerStateShutdown)
+                    instance->speaker_state = SubGhzSpeakerStateDisable;
+            }
+        }
+        return;
+    }
+
     if(instance->debug_pin_state) {
         subghz_devices_set_async_mirror_pin(instance->radio_device, NULL);
     }
@@ -562,6 +634,13 @@ void subghz_txrx_speaker_off(SubGhzTxRx* instance) {
 
 void subghz_txrx_speaker_mute(SubGhzTxRx* instance) {
     furi_assert(instance);
+
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_W(TAG, "radio_device is NULL in subghz_txrx_speaker_mute");
+        return;
+    }
+
     if(instance->debug_pin_state) {
         subghz_devices_set_async_mirror_pin(instance->radio_device, NULL);
     }
@@ -576,6 +655,13 @@ void subghz_txrx_speaker_mute(SubGhzTxRx* instance) {
 
 void subghz_txrx_speaker_unmute(SubGhzTxRx* instance) {
     furi_assert(instance);
+
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_W(TAG, "radio_device is NULL in subghz_txrx_speaker_unmute");
+        return;
+    }
+
     if(instance->debug_pin_state) {
         subghz_devices_set_async_mirror_pin(instance->radio_device, &gpio_ibutton);
     }
@@ -707,22 +793,49 @@ SubGhzRadioDeviceType subghz_txrx_radio_device_get(SubGhzTxRx* instance) {
 
 float subghz_txrx_radio_device_get_rssi(SubGhzTxRx* instance) {
     furi_assert(instance);
+
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_W(TAG, "radio_device is NULL in subghz_txrx_radio_device_get_rssi");
+        return -127.0f; // Return minimum RSSI value
+    }
+
     return subghz_devices_get_rssi(instance->radio_device);
 }
 
 const char* subghz_txrx_radio_device_get_name(SubGhzTxRx* instance) {
     furi_assert(instance);
+
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_W(TAG, "radio_device is NULL in subghz_txrx_radio_device_get_name");
+        return "NONE";
+    }
+
     return subghz_devices_get_name(instance->radio_device);
 }
 
 bool subghz_txrx_radio_device_is_frequency_valid(SubGhzTxRx* instance, uint32_t frequency) {
     furi_assert(instance);
+
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_W(TAG, "radio_device is NULL in subghz_txrx_radio_device_is_frequency_valid");
+        return false;
+    }
+
     return subghz_devices_is_frequency_valid(instance->radio_device, frequency);
 }
 
 bool subghz_txrx_radio_device_is_tx_allowed(SubGhzTxRx* instance, uint32_t frequency) {
     furi_assert(instance);
     furi_assert(instance->txrx_state != SubGhzTxRxStateSleep);
+
+    // CRITICAL: Check radio_device is initialized before using
+    if(instance->radio_device == NULL) {
+        FURI_LOG_E(TAG, "CRITICAL: radio_device is NULL in subghz_txrx_radio_device_is_tx_allowed");
+        return false;
+    }
 
     subghz_devices_idle(instance->radio_device);
     subghz_devices_set_frequency(instance->radio_device, frequency);

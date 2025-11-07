@@ -228,24 +228,33 @@ The `application.fam` file defines the app metadata, dependencies, and build con
   - This violates scene manager lifecycle and causes internal state corruption
   - Scene manager cannot handle nested transitions - causes crash in GUI service
 
-**All Fixes Applied (v1.8.6)**:
-1. **NULL checks for decoder_result** (`helpers/txrx/subghz_txrx.c:365-366`)
+**Critical Bug #7 - NULL Pointer Radio Device Crash (FIXED)**:
+- **Symptom**: Flipper crashes and reboots with NULL pointer dereference error during transmission or initialization
+- **Root Cause**: `radio_device` can be NULL if device initialization fails in `subghz_txrx_alloc()` at line 77-82
+  - When `subghz_devices_get_by_name(SUBGHZ_DEVICE_CC1101_INT_NAME)` fails, `radio_device` is set to NULL
+  - Code throughout `helpers/txrx/subghz_txrx.c` uses `radio_device` without NULL checks
+  - Any call to functions like `subghz_txrx_begin()`, `subghz_txrx_tx()`, `subghz_txrx_rx()`, etc. will crash
+  - This occurs in certain firmware variants or device states where radio initialization fails
+
+**All Fixes Applied (v1.8.9)**:
+1. **NULL checks for decoder_result** (`helpers/txrx/subghz_txrx.c:402-403, 446-447`)
 2. **Stack size increased** from 2KB to 4KB (`application.fam:10`)
-3. **Preset validation** in `subrem_tx_start_sub()` (`subghz_remote_app_i.c:237-238`)
-4. **Safe transmitter cleanup** - NULL check before free, set to NULL after (`helpers/txrx/subghz_txrx.c:358-362`)
-5. **Transmitter initialization** to NULL on alloc (`helpers/txrx/subghz_txrx.c:45-46`)
-6. **Removed use-after-free** code in custom button handling (`subghz_remote_app_i.c:273-277`)
-7. **Initialized chosen_sub** to 0 in app alloc (`subghz_remote_app.c:119`)
-8. **Bounds checking** for chosen_sub in all access points (`subghz_remote_app_i.c:225-228, 274-278`)
-9. **Assert → Safe checks** for all state transitions (`subghz_txrx.c:360-364, 210-214, 196-200, 234-238`)
-10. **Notification NULL checks** before calling notification_message (`subrem_scene_remote.c:82,88,97,106,125`)
-11. **Destruction flag** to prevent callback execution during cleanup (`subghz_remote_app.c:128, subrem_scene_remote.c:55`)
-12. **Fixed file-after-close** bug in map loading (`subghz_remote_app_i.c:161-166`)
-13. **Removed global device deinit** to allow coexistence with other SubGHz apps (`subghz_txrx.c:88-90`)
-14. **Fixed scene transitions** - moved from on_enter to on_event using custom events (`subrem_scene_open_map_file.c:8-52`)
+3. **Preset validation** in `subrem_tx_start_sub()` (`subghz_remote_app_i.c:274-277`)
+4. **Safe transmitter cleanup** - NULL check before free, set to NULL after (`helpers/txrx/subghz_txrx.c:395-399, 439-442`)
+5. **Transmitter initialization** to NULL on alloc (`helpers/txrx/subghz_txrx.c:45`)
+6. **Removed use-after-free** code in custom button handling (`subghz_remote_app_i.c:319-326`)
+7. **Initialized chosen_sub** to 0 in app alloc (`subghz_remote_app.c`)
+8. **Bounds checking** for chosen_sub in all access points (`subghz_remote_app_i.c:237-240, 311-315; subrem_scene_remote.c:96-110`)
+9. **Assert → Safe checks** for all state transitions (`subghz_txrx.c:387-390, 239-243, 276-280`)
+10. **Notification NULL checks** before calling notification_message (`subrem_scene_remote.c:106-108, 122-124, 128-130, 137-139, 146-148, 171-173`)
+11. **Destruction flag** to prevent callback execution during cleanup (`subghz_remote_app_i.h:69; subghz_remote_app.c; subrem_scene_remote.c:13-15, 25-27, 71-74`)
+12. **Fixed file-after-close** bug in map loading (`subghz_remote_app_i.c:166-177, 188`)
+13. **Removed global device deinit** to allow coexistence with other SubGHz apps (`subghz_txrx.c:96-98`)
+14. **Fixed scene transitions** - moved from on_enter to on_event using custom events (`subrem_scene_open_map_file.c`)
+15. **NULL checks for radio_device** - Added comprehensive NULL pointer checks before all `radio_device` usage (`helpers/txrx/subghz_txrx.c:181-184, 198-201, 226-229, 246-249, 264-267, 283-286, 431-434, 489-492, 577-580, 601-612, 633-636, 654-657, 792-795, 804-807, 816-819, 829-832`)
 
 **Files Modified**:
-- `helpers/txrx/subghz_txrx.c` - Multiple safety improvements, removed global deinit
+- `helpers/txrx/subghz_txrx.c` - Multiple safety improvements, removed global deinit, comprehensive radio_device NULL checks
 - `application.fam` - Increased stack size from 2KB to 4KB
 - `subghz_remote_app_i.c` - Fixed use-after-free, bounds checks, file-after-close
 - `subghz_remote_app.c` - Added initialization and destruction flag
