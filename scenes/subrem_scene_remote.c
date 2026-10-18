@@ -58,17 +58,34 @@ static bool subrem_scene_remote_find_value(const char* text, const char* key, Fu
     return false;
 }
 
+// Bit count from protocol text first line: "Princeton 24bit" -> 24, 0 if not found
+static uint16_t subrem_scene_remote_get_bit_count(const char* text) {
+    for(const char* p = strstr(text, "bit"); p; p = strstr(p + 1, "bit")) {
+        const char* start = p;
+        while(start > text && start[-1] >= '0' && start[-1] <= '9')
+            start--;
+        if(start == p) continue;
+
+        uint16_t bits = 0;
+        for(; start < p; start++)
+            bits = bits * 10 + (*start - '0');
+        return bits;
+    }
+    return 0;
+}
+
 static void subrem_scene_remote_update_info(SubGhzRemoteApp* app) {
     SubRemSubFilePreset* sub_preset = app->map_preset->subs_preset[app->chosen_sub];
 
     if(sub_preset->type == SubGhzProtocolTypeUnknown) {
-        subrem_view_remote_set_info(app->subrem_remote_view, "", "", "", "", "");
+        subrem_view_remote_set_info(app->subrem_remote_view, "", "", "", "", "", "");
         return;
     }
 
     FuriString* text = furi_string_alloc();
     FuriString* value = furi_string_alloc();
     FuriString* frequency = furi_string_alloc();
+    FuriString* key = furi_string_alloc();
     FuriString* serial = furi_string_alloc();
     FuriString* counter = furi_string_alloc();
     FuriString* manufacture = furi_string_alloc();
@@ -89,6 +106,12 @@ static void subrem_scene_remote_update_info(SubGhzRemoteApp* app) {
         subghz_protocol_decoder_base_get_string(decoder, text);
         const char* text_cstr = furi_string_get_cstr(text);
 
+        // Short keys fit on one line: 32bit is 8 hex digits at most
+        uint16_t bits = subrem_scene_remote_get_bit_count(text_cstr);
+        if(bits > 0 && bits <= 32 && subrem_scene_remote_find_value(text_cstr, "Key:", value)) {
+            furi_string_printf(key, "Key:%s", furi_string_get_cstr(value));
+        }
+
         if(subrem_scene_remote_find_value(text_cstr, "Sn:", value) ||
            subrem_scene_remote_find_value(text_cstr, "Serial:", value)) {
             furi_string_printf(serial, "Sn:%s", furi_string_get_cstr(value));
@@ -108,6 +131,7 @@ static void subrem_scene_remote_update_info(SubGhzRemoteApp* app) {
         app->subrem_remote_view,
         furi_string_get_cstr(sub_preset->protocol_name),
         furi_string_get_cstr(frequency),
+        furi_string_get_cstr(key),
         furi_string_get_cstr(serial),
         furi_string_get_cstr(counter),
         furi_string_get_cstr(manufacture));
@@ -115,6 +139,7 @@ static void subrem_scene_remote_update_info(SubGhzRemoteApp* app) {
     furi_string_free(manufacture);
     furi_string_free(counter);
     furi_string_free(serial);
+    furi_string_free(key);
     furi_string_free(frequency);
     furi_string_free(value);
     furi_string_free(text);
@@ -141,7 +166,7 @@ void subrem_scene_remote_on_enter(void* context) {
     subrem_view_remote_set_radio(
         app->subrem_remote_view,
         subghz_txrx_radio_device_get(app->txrx) != SubGhzRadioDeviceTypeInternal);
-    subrem_view_remote_set_info(app->subrem_remote_view, "", "", "", "", "");
+    subrem_view_remote_set_info(app->subrem_remote_view, "", "", "", "", "", "");
 
     subrem_view_remote_set_callback(app->subrem_remote_view, subrem_scene_remote_callback, app);
 

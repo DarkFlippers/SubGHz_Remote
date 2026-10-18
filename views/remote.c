@@ -10,6 +10,7 @@
 #define SUBREM_VIEW_REMOTE_LEFT_OFFSET      10
 #define SUBREM_VIEW_REMOTE_RIGHT_OFFSET     0
 #define SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH  24
+#define SUBREM_VIEW_REMOTE_MAX_INFO_LINES   5
 
 struct SubRemViewRemote {
     View* view;
@@ -28,6 +29,7 @@ typedef struct {
     // Details of the last pressed button, empty string = not present
     char protocol[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
     char frequency[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
+    char key[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
     char serial[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
     char counter[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
     char manufacture[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
@@ -128,6 +130,7 @@ void subrem_view_remote_set_info(
     SubRemViewRemote* subrem_view_remote,
     const char* protocol,
     const char* frequency,
+    const char* key,
     const char* serial,
     const char* counter,
     const char* manufacture) {
@@ -138,6 +141,7 @@ void subrem_view_remote_set_info(
         {
             strlcpy(model->protocol, protocol, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
             strlcpy(model->frequency, frequency, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
+            strlcpy(model->key, key, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
             strlcpy(model->serial, serial, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
             strlcpy(model->counter, counter, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
             strlcpy(model->manufacture, manufacture, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
@@ -153,6 +157,7 @@ static void subrem_view_remote_draw_info(Canvas* canvas, SubRemViewRemoteModel* 
     const char* lines[] = {
         model->protocol,
         model->frequency,
+        model->key,
         model->serial,
         model->counter,
         model->manufacture,
@@ -160,10 +165,13 @@ static void subrem_view_remote_draw_info(Canvas* canvas, SubRemViewRemoteModel* 
 
     canvas_draw_line(canvas, 0, 68, 63, 68);
 
+    // Only 5 lines fit, the last ones (manufacture first) are dropped when there are more
     FuriString* str = furi_string_alloc();
     uint8_t y = 80;
+    uint8_t lines_drawn = 0;
     for(size_t i = 0; i < COUNT_OF(lines); i++) {
         if(lines[i][0] == '\0') continue;
+        if(lines_drawn++ == SUBREM_VIEW_REMOTE_MAX_INFO_LINES) break;
         canvas_set_font(canvas, (i == 0) ? FontPrimary : FontSecondary);
         furi_string_set(str, lines[i]);
         elements_string_fit_width(canvas, str, 64);
@@ -345,6 +353,7 @@ SubRemViewRemote* subrem_view_remote_alloc(void) {
 
             model->protocol[0] = '\0';
             model->frequency[0] = '\0';
+            model->key[0] = '\0';
             model->serial[0] = '\0';
             model->counter[0] = '\0';
             model->manufacture[0] = '\0';
