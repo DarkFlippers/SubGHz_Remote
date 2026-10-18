@@ -28,9 +28,9 @@ typedef struct {
     // Details of the last pressed button, empty string = not present
     char protocol[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
     char frequency[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
-    char modulation[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
     char serial[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
     char counter[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
+    char manufacture[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
 } SubRemViewRemoteModel;
 
 void subrem_view_remote_set_callback(
@@ -128,9 +128,9 @@ void subrem_view_remote_set_info(
     SubRemViewRemote* subrem_view_remote,
     const char* protocol,
     const char* frequency,
-    const char* modulation,
     const char* serial,
-    const char* counter) {
+    const char* counter,
+    const char* manufacture) {
     furi_assert(subrem_view_remote);
     with_view_model(
         subrem_view_remote->view,
@@ -138,9 +138,9 @@ void subrem_view_remote_set_info(
         {
             strlcpy(model->protocol, protocol, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
             strlcpy(model->frequency, frequency, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
-            strlcpy(model->modulation, modulation, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
             strlcpy(model->serial, serial, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
             strlcpy(model->counter, counter, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
+            strlcpy(model->manufacture, manufacture, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
         },
         true);
 }
@@ -153,9 +153,9 @@ static void subrem_view_remote_draw_info(Canvas* canvas, SubRemViewRemoteModel* 
     const char* lines[] = {
         model->protocol,
         model->frequency,
-        model->modulation,
         model->serial,
         model->counter,
+        model->manufacture,
     };
 
     canvas_draw_line(canvas, 0, 68, 63, 68);
@@ -345,9 +345,9 @@ SubRemViewRemote* subrem_view_remote_alloc(void) {
 
             model->protocol[0] = '\0';
             model->frequency[0] = '\0';
-            model->modulation[0] = '\0';
             model->serial[0] = '\0';
             model->counter[0] = '\0';
+            model->manufacture[0] = '\0';
         },
         true);
     return subrem_view_remote;

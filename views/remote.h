@@ -41,6 +41,6 @@ void subrem_view_remote_set_info(
     SubRemViewRemote* subrem_view_remote,
     const char* protocol,
     const char* frequency,
-    const char* modulation,
     const char* serial,
-    const char* counter);
+    const char* counter,
+    const char* manufacture);

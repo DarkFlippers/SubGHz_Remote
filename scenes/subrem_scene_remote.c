@@ -71,9 +71,16 @@ static void subrem_scene_remote_update_info(SubGhzRemoteApp* app) {
     FuriString* frequency = furi_string_alloc();
     FuriString* serial = furi_string_alloc();
     FuriString* counter = furi_string_alloc();
+    FuriString* manufacture = furi_string_alloc();
 
     uint32_t freq = sub_preset->freq_preset.frequency;
-    furi_string_printf(frequency, "%lu.%02lu MHz", freq / 1000000, (freq % 1000000) / 10000);
+    // Only first two letters of modulation fit after frequency: AM650 -> AM, FM238 -> FM
+    furi_string_printf(
+        frequency,
+        "%lu.%02lu %.2s",
+        freq / 1000000,
+        (freq % 1000000) / 10000,
+        furi_string_get_cstr(sub_preset->freq_preset.name));
 
     // Decoder is loaded by TX start, fff_data already holds the key that was just sent
     SubGhzProtocolDecoderBase* decoder = subghz_txrx_get_decoder(app->txrx);
@@ -84,10 +91,16 @@ static void subrem_scene_remote_update_info(SubGhzRemoteApp* app) {
 
         if(subrem_scene_remote_find_value(text_cstr, "Sn:", value) ||
            subrem_scene_remote_find_value(text_cstr, "Serial:", value)) {
-            furi_string_printf(serial, "Sn: %s", furi_string_get_cstr(value));
+            furi_string_printf(serial, "Sn:%s", furi_string_get_cstr(value));
+        } else if(subrem_scene_remote_find_value(text_cstr, "Fix:", value)) {
+            // KeeLoq-like protocols show Fix part (button + serial) instead of serial
+            furi_string_printf(serial, "Fix:%s", furi_string_get_cstr(value));
         }
         if(subrem_scene_remote_find_value(text_cstr, "Cnt:", value)) {
-            furi_string_printf(counter, "Cnt: %s", furi_string_get_cstr(value));
+            furi_string_printf(counter, "Cnt:%s", furi_string_get_cstr(value));
+        }
+        if(subrem_scene_remote_find_value(text_cstr, "MF:", value)) {
+            furi_string_printf(manufacture, "MF:%s", furi_string_get_cstr(value));
         }
     }
 
@@ -95,10 +108,11 @@ static void subrem_scene_remote_update_info(SubGhzRemoteApp* app) {
         app->subrem_remote_view,
         furi_string_get_cstr(sub_preset->protocol_name),
         furi_string_get_cstr(frequency),
-        furi_string_get_cstr(sub_preset->freq_preset.name),
         furi_string_get_cstr(serial),
-        furi_string_get_cstr(counter));
+        furi_string_get_cstr(counter),
+        furi_string_get_cstr(manufacture));
 
+    furi_string_free(manufacture);
     furi_string_free(counter);
     furi_string_free(serial);
     furi_string_free(frequency);
