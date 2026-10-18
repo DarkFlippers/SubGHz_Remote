@@ -7,6 +7,7 @@
 #include "helpers/txrx/subghz_txrx.h"
 #ifndef FW_ORIGIN_Official
 #include <lib/subghz/blocks/custom_btn.h>
+#include <lib/subghz/blocks/generic.h>
 #endif
 
 #define TAG "SubGhzRemote"
@@ -192,7 +193,6 @@ bool subrem_save_protocol_to_file(FlipperFormat* flipper_format, const char* sub
     Stream* flipper_format_stream = flipper_format_get_raw_stream(flipper_format);
 
     bool saved = false;
-    uint32_t repeat = 200;
     FuriString* file_dir = furi_string_alloc();
 
     path_extract_dirname(sub_file_name, file_dir);
@@ -208,11 +208,6 @@ bool subrem_save_protocol_to_file(FlipperFormat* flipper_format, const char* sub
         //ToDo check Write
         stream_seek(flipper_format_stream, 0, StreamOffsetFromStart);
         stream_save_to_file(flipper_format_stream, storage, sub_file_name, FSOM_CREATE_ALWAYS);
-
-        if(!flipper_format_insert_or_update_uint32(flipper_format, "Repeat", &repeat, 1)) {
-            FURI_LOG_E(TAG, "Unable Repeat");
-            break;
-        }
 
         saved = true;
     } while(0);
@@ -236,7 +231,7 @@ bool subrem_tx_start_sub(SubGhzRemoteApp* app, SubRemSubFilePreset* sub_preset) 
     furi_assert(sub_preset);
     bool ret = false;
 
-    subrem_tx_stop_sub(app, true);
+    subrem_tx_stop_sub(app);
 
     if(sub_preset->type == SubGhzProtocolTypeUnknown) {
         ret = false;
@@ -253,46 +248,82 @@ bool subrem_tx_start_sub(SubGhzRemoteApp* app, SubRemSubFilePreset* sub_preset) 
             NULL,
             0);
 #ifndef FW_ORIGIN_Official
+        // Same as in Sub-GHz transmitter: decoder tells which custom buttons are allowed
+        // and keeps the original one, then custom button is set before TX starts,
+        // so transmitter is deserialized only once and counter moves only once
         subghz_custom_btns_reset();
-        subghz_txrx_custom_button_reset(app->txrx);
+        SubGhzProtocolDecoderBase* decoder = subghz_txrx_get_decoder(app->txrx);
+        if(decoder && subghz_protocol_decoder_base_deserialize(decoder, sub_preset->fff_data) ==
+                          SubGhzProtocolStatusOk) {
+            FuriString* text = furi_string_alloc();
+            subghz_protocol_decoder_base_get_string(decoder, text);
+            furi_string_free(text);
+        }
+        if(sub_preset->button != SUBGHZ_CUSTOM_BTN_OK && subghz_custom_btn_is_allowed() &&
+           subghz_custom_btn_get_original() != 0) {
+            subghz_custom_btn_set(sub_preset->button);
+        }
 
-        subghz_txrx_custom_button_set(app->txrx, sub_preset->button);
+        // Same as in Sub-GHz transmitter: TX is endless while the button is held,
+        // and after release protocol sends its own configured repeats.
+        // RAW is sent in full from its file instead, so it never uses endless TX
+        subghz_block_generic_global.endless_tx = (sub_preset->type != SubGhzProtocolTypeRAW);
 #endif
         if(subghz_txrx_tx_start(app->txrx, sub_preset->fff_data) == SubGhzTxRxStartTxStateOk) {
             ret = true;
         }
+#ifndef FW_ORIGIN_Official
+        if(!ret) {
+            subghz_block_generic_global.endless_tx = false;
+        }
+#endif
     }
 
     return ret;
 }
 
-bool subrem_tx_stop_sub(SubGhzRemoteApp* app, bool forced) {
+void subrem_tx_release_sub(SubGhzRemoteApp* app) {
+    furi_assert(app);
+    UNUSED(app);
+#ifndef FW_ORIGIN_Official
+    // Protocol yield sends its remaining repeats and finishes TX, tick catches the end
+    subghz_block_generic_global.endless_tx = false;
+#endif
+}
+
+bool subrem_tx_is_complete(SubGhzRemoteApp* app) {
+    furi_assert(app);
+    return subghz_devices_is_async_complete_tx(app->txrx->radio_device);
+}
+
+void subrem_tx_stop_sub(SubGhzRemoteApp* app) {
     furi_assert(app);
     SubRemSubFilePreset* sub_preset = app->map_preset->subs_preset[app->chosen_sub];
 
-    if(forced || (sub_preset->type != SubGhzProtocolTypeRAW)) {
 #ifndef FW_ORIGIN_Official
-        if(subghz_custom_btn_get() != SUBGHZ_CUSTOM_BTN_OK) {
-            subghz_custom_btn_set(SUBGHZ_CUSTOM_BTN_OK);
-            subghz_txrx_custom_button_reset(app->txrx);
-
-            // Call deserialize yet another time to restore the original button if a custom button was used
-            subghz_transmitter_deserialize(app->txrx->transmitter, sub_preset->fff_data);
-
-            subghz_custom_btns_reset();
-        }
+    subghz_block_generic_global.endless_tx = false;
 #endif
+    subghz_txrx_stop(app->txrx);
+#ifndef FW_ORIGIN_Official
+    if(subghz_custom_btn_get() != SUBGHZ_CUSTOM_BTN_OK) {
+        // Restore the original button the same way Sub-GHz transmitter does,
+        // without moving the counter
+        subghz_custom_btn_set(SUBGHZ_CUSTOM_BTN_OK);
+        int32_t tmp_counter = furi_hal_subghz_get_rolling_counter_mult();
+        furi_hal_subghz_set_rolling_counter_mult(0);
+        // Calling restore!
+        subghz_txrx_tx_start(app->txrx, sub_preset->fff_data);
         subghz_txrx_stop(app->txrx);
-#ifndef FW_ORIGIN_Official
-        if(sub_preset->type == SubGhzProtocolTypeDynamic) {
-            subghz_txrx_reset_dynamic_and_custom_btns(app->txrx);
-        }
-        subghz_custom_btns_reset();
-#endif
-        return true;
+        // Calling restore 2nd time special for FAAC SLH!
+        subghz_txrx_tx_start(app->txrx, sub_preset->fff_data);
+        subghz_txrx_stop(app->txrx);
+        furi_hal_subghz_set_rolling_counter_mult(tmp_counter);
     }
-
-    return false;
+    if(sub_preset->type == SubGhzProtocolTypeDynamic) {
+        subghz_txrx_reset_dynamic_and_custom_btns(app->txrx);
+    }
+    subghz_custom_btns_reset();
+#endif
 }
 
 SubRemLoadMapState subrem_load_from_file(SubGhzRemoteApp* app) {

@@ -36,3 +36,11 @@ void subrem_view_remote_set_state(
     uint8_t presed_btn);
 
 void subrem_view_remote_set_radio(SubRemViewRemote* subrem_view_remote, bool external);
+
+void subrem_view_remote_set_info(
+    SubRemViewRemote* subrem_view_remote,
+    const char* protocol,
+    const char* frequency,
+    const char* modulation,
+    const char* serial,
+    const char* counter);

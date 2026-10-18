@@ -9,6 +9,7 @@
 #define SUBREM_VIEW_REMOTE_MAX_LABEL_LENGTH 30
 #define SUBREM_VIEW_REMOTE_LEFT_OFFSET      10
 #define SUBREM_VIEW_REMOTE_RIGHT_OFFSET     0
+#define SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH  24
 
 struct SubRemViewRemote {
     View* view;
@@ -23,6 +24,13 @@ typedef struct {
 
     uint8_t pressed_btn;
     bool is_external;
+
+    // Details of the last pressed button, empty string = not present
+    char protocol[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
+    char frequency[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
+    char modulation[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
+    char serial[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
+    char counter[SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH];
 } SubRemViewRemoteModel;
 
 void subrem_view_remote_set_callback(
@@ -116,6 +124,55 @@ void subrem_view_remote_set_radio(SubRemViewRemote* subrem_view_remote, bool ext
         true);
 }
 
+void subrem_view_remote_set_info(
+    SubRemViewRemote* subrem_view_remote,
+    const char* protocol,
+    const char* frequency,
+    const char* modulation,
+    const char* serial,
+    const char* counter) {
+    furi_assert(subrem_view_remote);
+    with_view_model(
+        subrem_view_remote->view,
+        SubRemViewRemoteModel * model,
+        {
+            strlcpy(model->protocol, protocol, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
+            strlcpy(model->frequency, frequency, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
+            strlcpy(model->modulation, modulation, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
+            strlcpy(model->serial, serial, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
+            strlcpy(model->counter, counter, SUBREM_VIEW_REMOTE_MAX_INFO_LENGTH);
+        },
+        true);
+}
+
+static void subrem_view_remote_draw_info(Canvas* canvas, SubRemViewRemoteModel* model) {
+    if(model->protocol[0] == '\0') {
+        return;
+    }
+
+    const char* lines[] = {
+        model->protocol,
+        model->frequency,
+        model->modulation,
+        model->serial,
+        model->counter,
+    };
+
+    canvas_draw_line(canvas, 0, 68, 63, 68);
+
+    FuriString* str = furi_string_alloc();
+    uint8_t y = 80;
+    for(size_t i = 0; i < COUNT_OF(lines); i++) {
+        if(lines[i][0] == '\0') continue;
+        canvas_set_font(canvas, (i == 0) ? FontPrimary : FontSecondary);
+        furi_string_set(str, lines[i]);
+        elements_string_fit_width(canvas, str, 64);
+        canvas_draw_str(canvas, 0, y, furi_string_get_cstr(str));
+        y += 11;
+    }
+    furi_string_free(str);
+}
+
 void subrem_view_remote_draw(Canvas* canvas, SubRemViewRemoteModel* model) {
     canvas_clear(canvas);
     canvas_set_color(canvas, ColorBlack);
@@ -140,18 +197,31 @@ void subrem_view_remote_draw(Canvas* canvas, SubRemViewRemoteModel* model) {
         }
     }
 
-    //Icons for Labels
+    //Labels with their button icons, the sending one is drawn inverted
     const uint8_t list_y = 14;
-    canvas_draw_icon(canvas, 1, list_y + 5, &I_ButtonUp_7x4);
-    canvas_draw_icon(canvas, 1, list_y + 15, &I_ButtonDown_7x4);
-    canvas_draw_icon(canvas, 2, list_y + 23, &I_ButtonLeft_4x7);
-    canvas_draw_icon(canvas, 2, list_y + 33, &I_ButtonRight_4x7);
-    canvas_draw_icon(canvas, 0, list_y + 42, &I_Ok_btn_9x9);
+    const struct {
+        uint8_t x;
+        uint8_t y;
+        const Icon* icon;
+    } btn_icons[SubRemSubKeyNameMaxCount] = {
+        [SubRemSubKeyNameUp] = {1, 5, &I_ButtonUp_7x4},
+        [SubRemSubKeyNameDown] = {1, 15, &I_ButtonDown_7x4},
+        [SubRemSubKeyNameLeft] = {2, 23, &I_ButtonLeft_4x7},
+        [SubRemSubKeyNameRight] = {2, 33, &I_ButtonRight_4x7},
+        [SubRemSubKeyNameOk] = {0, 42, &I_Ok_btn_9x9},
+    };
 
-    //Labels
     canvas_set_font(canvas, FontSecondary);
     uint8_t y = list_y;
     for(uint8_t i = 0; i < SubRemSubKeyNameMaxCount; i++) {
+        bool is_active = (model->state == SubRemViewRemoteStateSending) &&
+                         (model->pressed_btn == i);
+        if(is_active) {
+            canvas_draw_rbox(canvas, 0, y + 2, 64, 11, 2);
+            canvas_set_color(canvas, ColorWhite);
+        }
+
+        canvas_draw_icon(canvas, btn_icons[i].x, list_y + btn_icons[i].y, btn_icons[i].icon);
         elements_text_box(
             canvas,
             SUBREM_VIEW_REMOTE_LEFT_OFFSET,
@@ -162,47 +232,15 @@ void subrem_view_remote_draw(Canvas* canvas, SubRemViewRemoteModel* model) {
             AlignBottom,
             model->labels[i],
             false);
+
+        if(is_active) {
+            canvas_set_color(canvas, ColorBlack);
+        }
         y += 10;
     }
 
     if(model->state != SubRemViewRemoteStateOFF) {
-        // D-pad 59x62
-        const uint8_t d_pad_x = 3;
-        const uint8_t d_pad_y = 66;
-
-        canvas_draw_icon(canvas, d_pad_x + 1 * (19 + 1), d_pad_y + 0 * (20 + 1), &I_up);
-
-        canvas_draw_icon(canvas, d_pad_x + 0 * (19 + 1), d_pad_y + 1 * (20 + 1), &I_left);
-        canvas_draw_icon(canvas, d_pad_x + 1 * (19 + 1), d_pad_y + 1 * (20 + 1), &I_ok);
-        canvas_draw_icon(canvas, d_pad_x + 2 * (19 + 1), d_pad_y + 1 * (20 + 1), &I_right);
-
-        canvas_draw_icon(canvas, d_pad_x + 1 * (19 + 1), d_pad_y + 2 * (20 + 1), &I_down);
-        if(model->state == SubRemViewRemoteStateSending) {
-            switch(model->pressed_btn) {
-            case SubRemSubKeyNameUp:
-                canvas_draw_icon(
-                    canvas, d_pad_x + 1 * (19 + 1), d_pad_y + 0 * (20 + 1), &I_up_hover);
-                break;
-            case SubRemSubKeyNameDown:
-                canvas_draw_icon(
-                    canvas, d_pad_x + 1 * (19 + 1), d_pad_y + 2 * (20 + 1), &I_down_hover);
-                break;
-            case SubRemSubKeyNameLeft:
-                canvas_draw_icon(
-                    canvas, d_pad_x + 0 * (19 + 1), d_pad_y + 1 * (20 + 1), &I_left_hover);
-                break;
-            case SubRemSubKeyNameRight:
-                canvas_draw_icon(
-                    canvas, d_pad_x + 2 * (19 + 1), d_pad_y + 1 * (20 + 1), &I_right_hover);
-                break;
-            case SubRemSubKeyNameOk:
-                canvas_draw_icon(
-                    canvas, d_pad_x + 1 * (19 + 1), d_pad_y + 1 * (20 + 1), &I_ok_hover);
-                break;
-            default:
-                break;
-            }
-        }
+        subrem_view_remote_draw_info(canvas, model);
     } else {
         canvas_draw_icon(canvas, 2, 128 - 11, &I_ButtonLeft_4x7);
         canvas_draw_str_aligned(canvas, 8, 128 - 4, AlignLeft, AlignBottom, "Back");
@@ -304,6 +342,12 @@ SubRemViewRemote* subrem_view_remote_alloc(void) {
 
             model->pressed_btn = 0;
             model->is_external = false;
+
+            model->protocol[0] = '\0';
+            model->frequency[0] = '\0';
+            model->modulation[0] = '\0';
+            model->serial[0] = '\0';
+            model->counter[0] = '\0';
         },
         true);
     return subrem_view_remote;

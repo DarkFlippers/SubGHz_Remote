@@ -2,6 +2,9 @@
 #include "../views/remote.h"
 
 #include <lib/subghz/protocols/raw.h>
+#ifndef FW_ORIGIN_Official
+#include <lib/subghz/blocks/custom_btn.h>
+#endif
 
 #define TAG "SubRemScenRemote"
 
@@ -9,12 +12,6 @@ void subrem_scene_remote_callback(SubRemCustomEvent event, void* context) {
     furi_assert(context);
     SubGhzRemoteApp* app = context;
     view_dispatcher_send_custom_event(app->view_dispatcher, event);
-}
-
-void subrem_scene_remote_raw_callback_end_tx(void* context) {
-    furi_assert(context);
-    SubGhzRemoteApp* app = context;
-    view_dispatcher_send_custom_event(app->view_dispatcher, SubRemCustomEventViewRemoteForcedStop);
 }
 
 static uint8_t subrem_scene_remote_event_to_index(SubRemCustomEvent event_id) {
@@ -35,13 +32,102 @@ static uint8_t subrem_scene_remote_event_to_index(SubRemCustomEvent event_id) {
     return ret;
 }
 
+static bool subrem_scene_remote_is_separator(char c) {
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
+// Find "<key> <value>" in protocol text, key has to start a word: "Cnt:" must not match "mCnt:"
+static bool subrem_scene_remote_find_value(const char* text, const char* key, FuriString* value) {
+    size_t key_len = strlen(key);
+    for(const char* p = strstr(text, key); p; p = strstr(p + 1, key)) {
+        if(p != text && !subrem_scene_remote_is_separator(p[-1])) continue;
+
+        p += key_len;
+        while(*p == ' ')
+            p++;
+        if(strncmp(p, "0x", 2) == 0) p += 2;
+
+        size_t len = 0;
+        while(p[len] != '\0' && !subrem_scene_remote_is_separator(p[len]))
+            len++;
+        if(len == 0) return false;
+
+        furi_string_set_strn(value, p, len);
+        return true;
+    }
+    return false;
+}
+
+static void subrem_scene_remote_update_info(SubGhzRemoteApp* app) {
+    SubRemSubFilePreset* sub_preset = app->map_preset->subs_preset[app->chosen_sub];
+
+    if(sub_preset->type == SubGhzProtocolTypeUnknown) {
+        subrem_view_remote_set_info(app->subrem_remote_view, "", "", "", "", "");
+        return;
+    }
+
+    FuriString* text = furi_string_alloc();
+    FuriString* value = furi_string_alloc();
+    FuriString* frequency = furi_string_alloc();
+    FuriString* serial = furi_string_alloc();
+    FuriString* counter = furi_string_alloc();
+
+    uint32_t freq = sub_preset->freq_preset.frequency;
+    furi_string_printf(frequency, "%lu.%02lu MHz", freq / 1000000, (freq % 1000000) / 10000);
+
+    // Decoder is loaded by TX start, fff_data already holds the key that was just sent
+    SubGhzProtocolDecoderBase* decoder = subghz_txrx_get_decoder(app->txrx);
+    if(decoder && subghz_protocol_decoder_base_deserialize(decoder, sub_preset->fff_data) ==
+                      SubGhzProtocolStatusOk) {
+        subghz_protocol_decoder_base_get_string(decoder, text);
+        const char* text_cstr = furi_string_get_cstr(text);
+
+        if(subrem_scene_remote_find_value(text_cstr, "Sn:", value) ||
+           subrem_scene_remote_find_value(text_cstr, "Serial:", value)) {
+            furi_string_printf(serial, "Sn: %s", furi_string_get_cstr(value));
+        }
+        if(subrem_scene_remote_find_value(text_cstr, "Cnt:", value)) {
+            furi_string_printf(counter, "Cnt: %s", furi_string_get_cstr(value));
+        }
+    }
+
+    subrem_view_remote_set_info(
+        app->subrem_remote_view,
+        furi_string_get_cstr(sub_preset->protocol_name),
+        furi_string_get_cstr(frequency),
+        furi_string_get_cstr(sub_preset->freq_preset.name),
+        furi_string_get_cstr(serial),
+        furi_string_get_cstr(counter));
+
+    furi_string_free(counter);
+    furi_string_free(serial);
+    furi_string_free(frequency);
+    furi_string_free(value);
+    furi_string_free(text);
+}
+
+static void subrem_scene_remote_tx_stop(SubGhzRemoteApp* app) {
+    subrem_tx_stop_sub(app);
+    app->tx_running = false;
+    app->tx_held = false;
+    subrem_view_remote_set_state(app->subrem_remote_view, SubRemViewRemoteStateIdle, 0);
+    notification_message(app->notifications, &sequence_blink_stop);
+}
+
 void subrem_scene_remote_on_enter(void* context) {
     SubGhzRemoteApp* app = context;
+
+    app->tx_running = false;
+    app->tx_held = false;
+#ifndef FW_ORIGIN_Official
+    subghz_custom_btns_reset();
+#endif
 
     subrem_view_remote_update_data_labels(app->subrem_remote_view, app->map_preset->subs_preset);
     subrem_view_remote_set_radio(
         app->subrem_remote_view,
         subghz_txrx_radio_device_get(app->txrx) != SubGhzRadioDeviceTypeInternal);
+    subrem_view_remote_set_info(app->subrem_remote_view, "", "", "", "", "");
 
     subrem_view_remote_set_callback(app->subrem_remote_view, subrem_scene_remote_callback, app);
 
@@ -49,6 +135,10 @@ void subrem_scene_remote_on_enter(void* context) {
 }
 
 bool subrem_scene_remote_on_event(void* context, SceneManagerEvent event) {
+    // Same concept as Sub-GHz transmitter: one press always sends the full signal.
+    // Protocols TX endlessly while the button is held and send their own repeats after release.
+    // RAW is sent to the end of file, and starts again if the button is still held by then.
+    // Back stops any TX right away.
     SubGhzRemoteApp* app = context;
     if(event.type == SceneManagerEventTypeCustom) {
         if(event.event == SubRemCustomEventViewRemoteBack) {
@@ -63,56 +153,71 @@ bool subrem_scene_remote_on_event(void* context, SceneManagerEvent event) {
             event.event == SubRemCustomEventViewRemoteStartLEFT ||
             event.event == SubRemCustomEventViewRemoteStartRIGHT ||
             event.event == SubRemCustomEventViewRemoteStartOK) {
-            // Start sending sub
-            subrem_tx_stop_sub(app, true);
+            // Stop the previous sub before chosen_sub changes, it restores that sub's button
+            subrem_tx_stop_sub(app);
 
             uint8_t chosen_sub = subrem_scene_remote_event_to_index(event.event);
             app->chosen_sub = chosen_sub;
+            app->tx_held = true;
 
             subrem_view_remote_set_state(
                 app->subrem_remote_view, SubRemViewRemoteStateLoading, chosen_sub);
 
-            if(subrem_tx_start_sub(app, app->map_preset->subs_preset[chosen_sub])) {
-                if(app->map_preset->subs_preset[chosen_sub]->type == SubGhzProtocolTypeRAW) {
-                    subghz_txrx_set_raw_file_encoder_worker_callback_end(
-                        app->txrx, subrem_scene_remote_raw_callback_end_tx, app);
-                }
+            app->tx_running = subrem_tx_start_sub(app, app->map_preset->subs_preset[chosen_sub]);
+            subrem_scene_remote_update_info(app);
+
+            if(app->tx_running) {
                 subrem_view_remote_set_state(
                     app->subrem_remote_view, SubRemViewRemoteStateSending, chosen_sub);
                 notification_message(app->notifications, &sequence_blink_start_magenta);
             } else {
+                app->tx_held = false;
                 subrem_view_remote_set_state(
                     app->subrem_remote_view, SubRemViewRemoteStateIdle, 0);
                 notification_message(app->notifications, &sequence_blink_red_100);
             }
             return true;
         } else if(event.event == SubRemCustomEventViewRemoteForcedStop) {
-            subrem_tx_stop_sub(app, true);
-            subrem_view_remote_set_state(app->subrem_remote_view, SubRemViewRemoteStateIdle, 0);
-
-            notification_message(app->notifications, &sequence_blink_stop);
+            subrem_scene_remote_tx_stop(app);
             return true;
         } else if(event.event == SubRemCustomEventViewRemoteStop) {
-            if(subrem_tx_stop_sub(app, false)) {
-                subrem_view_remote_set_state(
-                    app->subrem_remote_view, SubRemViewRemoteStateIdle, 0);
-
-                notification_message(app->notifications, &sequence_blink_stop);
+            // Button released: TX goes on until the signal is fully sent, tick catches the end
+            app->tx_held = false;
+            if(app->tx_running) {
+                subrem_tx_release_sub(app);
             }
             return true;
         }
+    } else if(event.type == SceneManagerEventTypeTick) {
+        if(app->tx_running && subrem_tx_is_complete(app)) {
+            SubRemSubFilePreset* sub_preset = app->map_preset->subs_preset[app->chosen_sub];
+            if(app->tx_held && sub_preset->type == SubGhzProtocolTypeRAW) {
+                // RAW is over but button is still held - send it again
+                app->tx_running = subrem_tx_start_sub(app, sub_preset);
+                if(!app->tx_running) {
+                    subrem_scene_remote_tx_stop(app);
+                }
+            } else {
+                subrem_scene_remote_tx_stop(app);
+            }
+        }
+        return true;
     }
-    // } else if(event.type == SceneManagerEventTypeTick) {
-    // }
     return false;
 }
 
 void subrem_scene_remote_on_exit(void* context) {
     SubGhzRemoteApp* app = context;
 
-    subrem_tx_stop_sub(app, true);
+    subrem_tx_stop_sub(app);
+    app->tx_running = false;
+    app->tx_held = false;
 
     subrem_view_remote_set_state(app->subrem_remote_view, SubRemViewRemoteStateIdle, 0);
 
     notification_message(app->notifications, &sequence_blink_stop);
+
+#ifndef FW_ORIGIN_Official
+    subghz_txrx_reset_dynamic_and_custom_btns(app->txrx);
+#endif
 }

@@ -60,7 +60,6 @@ SubRemLoadSubState subrem_sub_preset_load(
     SubRemLoadSubState ret;
     FuriString* temp_str = furi_string_alloc();
     uint32_t temp_data32;
-    uint32_t repeat = 200;
 
     ret = SubRemLoadSubStateError;
 
@@ -173,11 +172,6 @@ SubRemLoadSubState subrem_sub_preset_load(
             furi_string_set(sub_preset->protocol_name, temp_str);
         } else {
             FURI_LOG_E(TAG, "Protocol does not support transmission");
-            break;
-        }
-
-        if(!flipper_format_insert_or_update_uint32(fff_data, "Repeat", &repeat, 1)) {
-            FURI_LOG_E(TAG, "Unable Repeat");
             break;
         }
 

@@ -55,13 +55,20 @@ typedef struct {
     bool map_not_saved;
 
     uint8_t chosen_sub;
+
+    bool tx_running;
+    bool tx_held;
 } SubGhzRemoteApp;
 
 SubRemLoadMapState subrem_load_from_file(SubGhzRemoteApp* app);
 
 bool subrem_tx_start_sub(SubGhzRemoteApp* app, SubRemSubFilePreset* sub_preset);
 
-bool subrem_tx_stop_sub(SubGhzRemoteApp* app, bool forced);
+void subrem_tx_release_sub(SubGhzRemoteApp* app);
+
+bool subrem_tx_is_complete(SubGhzRemoteApp* app);
+
+void subrem_tx_stop_sub(SubGhzRemoteApp* app);
 
 SubRemLoadMapState subrem_map_file_load(SubGhzRemoteApp* app, const char* file_path);
 
